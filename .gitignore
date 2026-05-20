@@ -1,0 +1,11 @@
+.next/
+node_modules/
+out/
+dist/
+build/
+.env*.local
+.vercel/
+*.tsbuildinfo
+firebase-debug.log
+firestore-debug.log
+storage-debug.log

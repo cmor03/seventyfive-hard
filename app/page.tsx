@@ -70,19 +70,13 @@ type Task = {
 const tasks: Task[] = [
   {
     key: "workout1",
-    title: "45 min workout",
-    detail: "First training block",
-    icon: <Dumbbell size={20} />,
-  },
-  {
-    key: "workout2",
-    title: "45 min workout",
-    detail: "Second training block",
+    title: "Workout",
+    detail: "45 min training block",
     icon: <Dumbbell size={20} />,
   },
   {
     key: "outsideWorkout",
-    title: "One workout outside",
+    title: "Outside workout",
     detail: "Fresh air required",
     icon: <Sparkles size={20} />,
   },
@@ -324,6 +318,16 @@ export default function Home() {
       setAuthMessage(error.message);
     });
   }, [profile, user, visibleDays]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    Object.values(progress).forEach((record) => {
+      if (record.progressPhotoUrl) {
+        const img = new window.Image();
+        img.src = record.progressPhotoUrl;
+      }
+    });
+  }, [progress]);
 
   function readableError(error: unknown) {
     if (error instanceof FirebaseError) {
@@ -689,7 +693,13 @@ export default function Home() {
               </div>
               {daily.progressPhotoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img className="today-photo" src={daily.progressPhotoUrl} alt="Today progress" />
+                <img
+                  className="today-photo"
+                  src={daily.progressPhotoUrl}
+                  alt="Today progress"
+                  loading="eager"
+                  fetchPriority="high"
+                />
               ) : (
                 <button
                   className="photo-placeholder"
@@ -743,6 +753,8 @@ export default function Home() {
                 <img
                   src={expandedProgress.item.progressPhotoUrl}
                   alt={`Day ${expandedProgress.day} progress expanded`}
+                  loading="eager"
+                  fetchPriority="high"
                 />
                 <span className="expanded-photo-meta">
                   <span>Day {expandedProgress.day}</span>
@@ -773,7 +785,12 @@ export default function Home() {
                     >
                       {hasPhoto ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.progressPhotoUrl} alt={`Day ${day} progress`} />
+                        <img
+                          src={item.progressPhotoUrl}
+                          alt={`Day ${day} progress`}
+                          loading="eager"
+                          fetchPriority="high"
+                        />
                       ) : (
                         <div className="tile-placeholder">
                           <ImageIcon size={22} />

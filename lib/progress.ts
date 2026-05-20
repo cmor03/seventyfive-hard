@@ -2,7 +2,6 @@ export type StarStatus = "gray" | "gold" | "blue";
 
 export type DailyRecord = {
   workout1: boolean;
-  workout2: boolean;
   outsideWorkout: boolean;
   strictDiet: boolean;
   waterGallon: boolean;
@@ -22,7 +21,6 @@ export type UserProfile = {
 
 export const coreTaskKeys = [
   "workout1",
-  "workout2",
   "outsideWorkout",
   "strictDiet",
   "waterGallon",
@@ -31,7 +29,6 @@ export const coreTaskKeys = [
 
 export const emptyDailyRecord: DailyRecord = {
   workout1: false,
-  workout2: false,
   outsideWorkout: false,
   strictDiet: false,
   waterGallon: false,

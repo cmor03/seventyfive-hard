@@ -127,6 +127,37 @@ function statusLabel(status: StarStatus) {
   return "Still in progress";
 }
 
+function isHeicFile(file: File) {
+  return /image\/hei[cf]/i.test(file.type) || /\.(hei[cf])$/i.test(file.name);
+}
+
+function isAcceptedImage(file: File) {
+  return file.type.startsWith("image/") || isHeicFile(file);
+}
+
+function fileExtension(file: File) {
+  const subtype = file.type.split("/")[1]?.toLowerCase();
+
+  if (subtype) return subtype.replace("jpeg", "jpg");
+
+  return file.name.split(".").pop()?.toLowerCase() || "jpg";
+}
+
+async function uploadableImage(file: File) {
+  if (!isHeicFile(file)) return file;
+
+  const { default: heic2any } = await import("heic2any");
+  const converted = await heic2any({
+    blob: file,
+    toType: "image/jpeg",
+    quality: 0.88,
+  });
+  const jpegBlob = Array.isArray(converted) ? converted[0] : converted;
+  const filename = file.name.replace(/\.(hei[cf])$/i, ".jpg") || "progress-photo.jpg";
+
+  return new File([jpegBlob], filename, { type: "image/jpeg" });
+}
+
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -352,7 +383,7 @@ export default function Home() {
 
   async function uploadPhoto(file?: File) {
     if (!file || !user || !storage) return;
-    if (!file.type.startsWith("image/")) {
+    if (!isAcceptedImage(file)) {
       setAuthMessage("Please choose an image file.");
       return;
     }
@@ -361,12 +392,15 @@ export default function Home() {
     setAuthMessage("");
 
     try {
-      const extension = file.type.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
+      const imageFile = await uploadableImage(file);
+      const extension = fileExtension(imageFile);
       const photoRef = ref(storage, `users/${user.uid}/progress/${currentDateKey}.${extension}`);
-      await uploadBytes(photoRef, file, {
-        contentType: file.type,
+      await uploadBytes(photoRef, imageFile, {
+        contentType: imageFile.type || "image/jpeg",
         customMetadata: {
           date: currentDateKey,
+          originalType: file.type || "unknown",
+          convertedFromHeic: `${isHeicFile(file)}`,
         },
       });
       const progressPhotoUrl = await getDownloadURL(photoRef);
@@ -617,7 +651,7 @@ export default function Home() {
                 ref={fileInputRef}
                 className="visually-hidden"
                 type="file"
-                accept="image/*"
+                accept="image/*,.heic,.heif"
                 onChange={(event) => uploadPhoto(event.target.files?.[0])}
               />
               <button

@@ -35,6 +35,7 @@ import {
   type ConfirmationResult,
   type User,
 } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import {
   doc,
   getDoc,
@@ -250,6 +251,26 @@ export default function Home() {
   }, [profile, user, visibleDays]);
 
   function readableError(error: unknown) {
+    if (error instanceof FirebaseError) {
+      if (error.code === "auth/operation-not-allowed") {
+        return "Phone sign-in is not enabled in Firebase Authentication.";
+      }
+
+      if (error.code === "auth/invalid-phone-number") {
+        return "Enter the phone number in international format, like +1 555 123 4567.";
+      }
+
+      if (error.code === "auth/invalid-app-credential" || error.code === "auth/captcha-check-failed") {
+        return "Firebase rejected the phone verification. Check that this domain is authorized and reCAPTCHA can run.";
+      }
+
+      if (error.code === "auth/too-many-requests" || error.code === "auth/quota-exceeded") {
+        return "Firebase temporarily blocked SMS sends for this number or project. Try again later or use a test number.";
+      }
+
+      return `${error.message} (${error.code})`;
+    }
+
     if (error instanceof Error) return error.message;
     return "Something went wrong. Please try again.";
   }

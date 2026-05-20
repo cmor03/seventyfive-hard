@@ -127,6 +127,28 @@ function statusLabel(status: StarStatus) {
   return "Still in progress";
 }
 
+function normalizePhoneNumber(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) return "";
+
+  if (trimmed.startsWith("+")) {
+    return `+${trimmed.slice(1).replace(/\D/g, "")}`;
+  }
+
+  const digits = trimmed.replace(/\D/g, "");
+
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+
+  return digits ? `+${digits}` : "";
+}
+
 function isHeicFile(file: File) {
   return /image\/hei[cf]/i.test(file.type) || /\.(hei[cf])$/i.test(file.name);
 }
@@ -224,13 +246,35 @@ export default function Home() {
     }
 
     const activeAuth = auth;
-    setPersistence(activeAuth, browserLocalPersistence);
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
 
-    return onAuthStateChanged(activeAuth, (nextUser) => {
-      setUser(nextUser);
-      setAuthReady(true);
-    });
+    setPersistence(activeAuth, browserLocalPersistence)
+      .then(() => {
+        if (cancelled) return;
+        unsubscribe = onAuthStateChanged(activeAuth, (nextUser) => {
+          setUser(nextUser);
+          setAuthReady(true);
+        });
+      })
+      .catch((error: Error) => {
+        setAuthMessage(error.message);
+        setAuthReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    setPhoneNumber(user.phoneNumber ?? "");
+  }, [user]);
 
   useEffect(() => {
     const loadProfileAndToday = async () => {
@@ -324,11 +368,17 @@ export default function Home() {
     setAuthMessage("");
 
     try {
+      const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+      if (normalizedPhoneNumber.length < 8) {
+        throw new Error("Enter a valid phone number.");
+      }
+
+      setPhoneNumber(normalizedPhoneNumber);
       const verifier = getRecaptchaVerifier();
       if (!verifier) throw new Error("Phone sign-in is not ready yet.");
-      const result = await signInWithPhoneNumber(auth, phoneNumber, verifier);
+      const result = await signInWithPhoneNumber(auth, normalizedPhoneNumber, verifier);
       setConfirmationResult(result);
-      setAuthMessage("Verification code sent.");
+      setAuthMessage(`Verification code sent to ${normalizedPhoneNumber}.`);
     } catch (error) {
       recaptchaVerifierRef.current?.clear();
       recaptchaVerifierRef.current = null;
@@ -496,6 +546,9 @@ export default function Home() {
                 onChange={(event) =>
                   confirmationResult ? setSmsCode(event.target.value) : setPhoneNumber(event.target.value)
                 }
+                onBlur={() => {
+                  if (!confirmationResult) setPhoneNumber(normalizePhoneNumber(phoneNumber));
+                }}
                 required
               />
             </div>

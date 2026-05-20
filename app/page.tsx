@@ -10,8 +10,9 @@ import {
   Droplets,
   ImageIcon,
   LogOut,
-  Mail,
+  Phone,
   Salad,
+  ShieldCheck,
   Sparkles,
   Star,
   Upload,
@@ -26,12 +27,12 @@ import {
 } from "react";
 import {
   browserLocalPersistence,
-  isSignInWithEmailLink,
   onAuthStateChanged,
-  sendSignInLinkToEmail,
+  RecaptchaVerifier,
   setPersistence,
-  signInWithEmailLink,
+  signInWithPhoneNumber,
   signOut,
+  type ConfirmationResult,
   type User,
 } from "firebase/auth";
 import {
@@ -55,12 +56,7 @@ import {
 } from "@/lib/progress";
 
 type ViewMode = "today" | "progress";
-
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
-
-function signInRedirectUrl() {
-  return appUrl || window.location.origin;
-}
+const recaptchaContainerId = "phone-recaptcha-container";
 
 type Task = {
   key: keyof Omit<DailyRecord, "progressPhotoUrl" | "status" | "updatedAt">;
@@ -133,7 +129,9 @@ function statusLabel(status: StarStatus) {
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [email, setEmail] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [smsCode, setSmsCode] = useState("");
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [authMessage, setAuthMessage] = useState("");
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [startDate, setStartDate] = useState(todayKey());
@@ -144,6 +142,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
   const currentDateKey = todayKey();
   const currentDay = profile ? dayNumberFromStart(profile.startDate) : 1;
@@ -168,17 +167,20 @@ export default function Home() {
       if (!user || !db) return;
       const activeDb = db;
       setSaving(true);
-      const withStatus = {
-        ...nextRecord,
-        status: calculateStatus(nextRecord),
-        updatedAt: serverTimestamp(),
-      };
-      await setDoc(doc(activeDb, "users", user.uid, "daily", currentDateKey), withStatus, {
-        merge: true,
-      });
-      setDaily(withStatus);
-      setProgress((items) => ({ ...items, [currentDateKey]: withStatus }));
-      setSaving(false);
+      try {
+        const withStatus = {
+          ...nextRecord,
+          status: calculateStatus(nextRecord),
+          updatedAt: serverTimestamp(),
+        };
+        await setDoc(doc(activeDb, "users", user.uid, "daily", currentDateKey), withStatus, {
+          merge: true,
+        });
+        setDaily(withStatus);
+        setProgress((items) => ({ ...items, [currentDateKey]: withStatus }));
+      } finally {
+        setSaving(false);
+      }
     },
     [currentDateKey, user],
   );
@@ -191,22 +193,6 @@ export default function Home() {
 
     const activeAuth = auth;
     setPersistence(activeAuth, browserLocalPersistence);
-
-    const finishEmailLinkSignIn = async () => {
-      if (!isSignInWithEmailLink(activeAuth, window.location.href)) return;
-      const storedEmail = window.localStorage.getItem("75-hard-email");
-      const linkEmail = storedEmail || window.prompt("Confirm your email");
-
-      if (!linkEmail) return;
-
-      await signInWithEmailLink(activeAuth, linkEmail, window.location.href);
-      window.localStorage.removeItem("75-hard-email");
-      window.history.replaceState({}, document.title, window.location.origin);
-    };
-
-    finishEmailLinkSignIn().catch((error: Error) => {
-      setAuthMessage(error.message);
-    });
 
     return onAuthStateChanged(activeAuth, (nextUser) => {
       setUser(nextUser);
@@ -263,20 +249,58 @@ export default function Home() {
     });
   }, [profile, user, visibleDays]);
 
-  async function sendMagicLink(event: FormEvent<HTMLFormElement>) {
+  function readableError(error: unknown) {
+    if (error instanceof Error) return error.message;
+    return "Something went wrong. Please try again.";
+  }
+
+  function getRecaptchaVerifier() {
+    if (!auth) return null;
+    if (recaptchaVerifierRef.current) return recaptchaVerifierRef.current;
+
+    recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaContainerId, {
+      size: "invisible",
+    });
+
+    return recaptchaVerifierRef.current;
+  }
+
+  async function sendSmsCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!auth) return;
     setBusy(true);
     setAuthMessage("");
 
-    await sendSignInLinkToEmail(auth, email, {
-      url: signInRedirectUrl(),
-      handleCodeInApp: true,
-    });
+    try {
+      const verifier = getRecaptchaVerifier();
+      if (!verifier) throw new Error("Phone sign-in is not ready yet.");
+      const result = await signInWithPhoneNumber(auth, phoneNumber, verifier);
+      setConfirmationResult(result);
+      setAuthMessage("Verification code sent.");
+    } catch (error) {
+      recaptchaVerifierRef.current?.clear();
+      recaptchaVerifierRef.current = null;
+      setAuthMessage(readableError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
 
-    window.localStorage.setItem("75-hard-email", email);
-    setAuthMessage("Check your email for a private sign-in link.");
-    setBusy(false);
+  async function confirmSmsCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!confirmationResult) return;
+    setBusy(true);
+    setAuthMessage("");
+
+    try {
+      await confirmationResult.confirm(smsCode);
+      setConfirmationResult(null);
+      setSmsCode("");
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
@@ -288,6 +312,7 @@ export default function Home() {
       startDate,
       createdAt: serverTimestamp(),
       email: user.email,
+      phoneNumber: user.phoneNumber,
     };
     await setDoc(doc(activeDb, "users", user.uid), nextProfile, { merge: true });
     setProfile(nextProfile);
@@ -296,20 +321,42 @@ export default function Home() {
 
   async function toggleTask(key: Task["key"]) {
     const nextRecord = { ...daily, [key]: !daily[key] };
-    await persistDaily(nextRecord);
+    try {
+      await persistDaily(nextRecord);
+      setAuthMessage("");
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    }
   }
 
   async function uploadPhoto(file?: File) {
     if (!file || !user || !storage) return;
+    if (!file.type.startsWith("image/")) {
+      setAuthMessage("Please choose an image file.");
+      return;
+    }
+
     setBusy(true);
-    const extension = file.name.split(".").pop() || "jpg";
-    const photoRef = ref(storage, `users/${user.uid}/progress/${currentDateKey}.${extension}`);
-    await uploadBytes(photoRef, file, {
-      contentType: file.type,
-    });
-    const progressPhotoUrl = await getDownloadURL(photoRef);
-    await persistDaily({ ...daily, progressPhotoUrl });
-    setBusy(false);
+    setAuthMessage("");
+
+    try {
+      const extension = file.type.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
+      const photoRef = ref(storage, `users/${user.uid}/progress/${currentDateKey}.${extension}`);
+      await uploadBytes(photoRef, file, {
+        contentType: file.type,
+        customMetadata: {
+          date: currentDateKey,
+        },
+      });
+      const progressPhotoUrl = await getDownloadURL(photoRef);
+      await persistDaily({ ...daily, progressPhotoUrl });
+      setAuthMessage("Progress photo saved.");
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setBusy(false);
+    }
   }
 
   async function handleSignOut() {
@@ -320,6 +367,8 @@ export default function Home() {
     setDaily(emptyDailyRecord);
     setProgress({});
     setExpandedProgressDate(null);
+    setConfirmationResult(null);
+    setSmsCode("");
   }
 
   if (!isFirebaseConfigured) {
@@ -374,26 +423,45 @@ export default function Home() {
           </div>
           <h1>Your private 75 Hard command center.</h1>
           <p className="muted">
-            Sign in with a magic link. Your daily photos stay locked to your account.
+            Sign in with your phone number. Your daily photos stay locked to your account.
           </p>
-          <form className="auth-form" onSubmit={sendMagicLink}>
-            <label htmlFor="email">Email</label>
+          <form className="auth-form" onSubmit={confirmationResult ? confirmSmsCode : sendSmsCode}>
+            <label htmlFor={confirmationResult ? "smsCode" : "phoneNumber"}>
+              {confirmationResult ? "Verification code" : "Phone number"}
+            </label>
             <div className="email-field">
-              <Mail size={18} />
+              {confirmationResult ? <ShieldCheck size={18} /> : <Phone size={18} />}
               <input
-                id="email"
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                id={confirmationResult ? "smsCode" : "phoneNumber"}
+                type="tel"
+                inputMode="tel"
+                autoComplete={confirmationResult ? "one-time-code" : "tel"}
+                placeholder={confirmationResult ? "123456" : "+1 555 123 4567"}
+                value={confirmationResult ? smsCode : phoneNumber}
+                onChange={(event) =>
+                  confirmationResult ? setSmsCode(event.target.value) : setPhoneNumber(event.target.value)
+                }
                 required
               />
             </div>
+            <div id={recaptchaContainerId} />
             <button className="primary-button" type="submit" disabled={busy}>
-              {busy ? "Sending..." : "Send sign-in link"}
+              {busy ? "Working..." : confirmationResult ? "Verify code" : "Send code"}
             </button>
+            {confirmationResult ? (
+              <button
+                className="text-button"
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmationResult(null);
+                  setSmsCode("");
+                  setAuthMessage("");
+                }}
+              >
+                Use a different number
+              </button>
+            ) : null}
           </form>
           {authMessage ? <p className="system-message">{authMessage}</p> : null}
         </section>
@@ -538,11 +606,12 @@ export default function Home() {
                 disabled={busy}
               >
                 <Upload size={18} />
-                {daily.progressPhotoUrl ? "Replace photo" : "Upload photo"}
+                {busy ? "Uploading..." : daily.progressPhotoUrl ? "Replace photo" : "Upload photo"}
               </button>
             </section>
 
             <p className="save-state">{saving ? "Saving..." : "Saved privately"}</p>
+            {authMessage ? <p className="save-state">{authMessage}</p> : null}
           </section>
         ) : (
           <section className="progress-view">

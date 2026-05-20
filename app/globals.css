@@ -199,6 +199,22 @@ button {
   font-weight: 800;
 }
 
+.text-button {
+  width: fit-content;
+  margin: 0 auto;
+  border: 0;
+  color: rgba(16, 20, 25, 0.62);
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.text-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .primary-button {
   color: #fff;
   background: linear-gradient(145deg, #121820, #526170);

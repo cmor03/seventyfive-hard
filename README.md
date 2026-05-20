@@ -5,7 +5,7 @@ A private 75 Hard tracker built with Next.js, Firebase Auth, Firestore, Firebase
 ## Local Setup
 
 1. Create a Firebase project.
-2. Enable Firebase Authentication with Email link sign-in.
+2. Enable Firebase Authentication with Phone sign-in.
 3. Create a Firestore database.
 4. Enable Firebase Storage.
 5. Copy `.env.local.example` to `.env.local` and fill in your Firebase web app config.
@@ -37,6 +37,5 @@ Add these environment variables in Vercel before deploying:
 - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
 - `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`
-- `NEXT_PUBLIC_APP_URL` set to `https://seventyfive-hard.vercel.app/`
 
-Also add your Vercel domain to Firebase Authentication authorized domains so email-link sign-in can complete.
+Also add your Vercel domain to Firebase Authentication authorized domains so phone sign-in can complete.

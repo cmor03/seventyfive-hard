@@ -17,6 +17,7 @@ export type UserProfile = {
   startDate: string;
   createdAt?: unknown;
   email?: string | null;
+  phoneNumber?: string | null;
 };
 
 export const coreTaskKeys = [

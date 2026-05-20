@@ -37,5 +37,6 @@ Add these environment variables in Vercel before deploying:
 - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
 - `NEXT_PUBLIC_FIREBASE_APP_ID`
 - `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`
+- `NEXT_PUBLIC_APP_URL` set to `https://seventyfive-hard.vercel.app/`
 
 Also add your Vercel domain to Firebase Authentication authorized domains so email-link sign-in can complete.

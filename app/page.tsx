@@ -56,6 +56,12 @@ import {
 
 type ViewMode = "today" | "progress";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+
+function signInRedirectUrl() {
+  return appUrl || window.location.origin;
+}
+
 type Task = {
   key: keyof Omit<DailyRecord, "progressPhotoUrl" | "status" | "updatedAt">;
   title: string;
@@ -264,7 +270,7 @@ export default function Home() {
     setAuthMessage("");
 
     await sendSignInLinkToEmail(auth, email, {
-      url: window.location.origin,
+      url: signInRedirectUrl(),
       handleCodeInApp: true,
     });
 

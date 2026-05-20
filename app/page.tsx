@@ -134,6 +134,7 @@ export default function Home() {
   const [daily, setDaily] = useState<DailyRecord>(emptyDailyRecord);
   const [progress, setProgress] = useState<Record<string, DailyRecord>>({});
   const [view, setView] = useState<ViewMode>("today");
+  const [expandedProgressDate, setExpandedProgressDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -141,9 +142,20 @@ export default function Home() {
   const currentDateKey = todayKey();
   const currentDay = profile ? dayNumberFromStart(profile.startDate) : 1;
   const visibleDays = useMemo(
-    () => Array.from({ length: Math.max(currentDay, 75) }, (_, index) => index + 1),
+    () => Array.from({ length: currentDay }, (_, index) => index + 1),
     [currentDay],
   );
+  const expandedProgress = useMemo(() => {
+    if (!expandedProgressDate || !profile) return null;
+    const day =
+      visibleDays.find((visibleDay) => dateKeyForDay(profile.startDate, visibleDay) === expandedProgressDate) ??
+      currentDay;
+    const item = progress[expandedProgressDate];
+
+    if (!item?.progressPhotoUrl) return null;
+
+    return { dateKey: expandedProgressDate, day, item };
+  }, [currentDay, expandedProgressDate, profile, progress, visibleDays]);
 
   const persistDaily = useCallback(
     async (nextRecord: DailyRecord) => {
@@ -301,6 +313,7 @@ export default function Home() {
     setProfile(null);
     setDaily(emptyDailyRecord);
     setProgress({});
+    setExpandedProgressDate(null);
   }
 
   if (!isFirebaseConfigured) {
@@ -436,7 +449,10 @@ export default function Home() {
           <button
             className={view === "today" ? "active" : ""}
             type="button"
-            onClick={() => setView("today")}
+            onClick={() => {
+              setView("today");
+              setExpandedProgressDate(null);
+            }}
           >
             Today
           </button>
@@ -533,30 +549,63 @@ export default function Home() {
                 <ChevronRight size={20} />
               </button>
             </div>
-            <div className="progress-grid">
-              {visibleDays.map((day) => {
-                const dateKey = dateKeyForDay(profile.startDate, day);
-                const item = progress[dateKey] || emptyDailyRecord;
+            {expandedProgress ? (
+              <button
+                className={`expanded-photo-view ${expandedProgress.item.status}`}
+                type="button"
+                onClick={() => setExpandedProgressDate(null)}
+                aria-label={`Collapse day ${expandedProgress.day} progress photo`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={expandedProgress.item.progressPhotoUrl}
+                  alt={`Day ${expandedProgress.day} progress expanded`}
+                />
+                <span className="expanded-photo-meta">
+                  <span>Day {expandedProgress.day}</span>
+                  <Star size={32} fill="currentColor" />
+                </span>
+              </button>
+            ) : (
+              <div className="progress-grid">
+                {visibleDays.map((day) => {
+                  const dateKey = dateKeyForDay(profile.startDate, day);
+                  const item = progress[dateKey] || emptyDailyRecord;
+                  const hasPhoto = Boolean(item.progressPhotoUrl);
 
-                return (
-                  <article className={`progress-tile ${item.status}`} key={dateKey}>
-                    {item.progressPhotoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.progressPhotoUrl} alt={`Day ${day} progress`} />
-                    ) : (
-                      <div className="tile-placeholder">
-                        <ImageIcon size={24} />
+                  return (
+                    <button
+                      className={`progress-tile ${item.status} ${hasPhoto ? "has-photo" : "missing-photo"}`}
+                      key={dateKey}
+                      type="button"
+                      onClick={() => {
+                        if (hasPhoto) setExpandedProgressDate(dateKey);
+                      }}
+                      disabled={!hasPhoto}
+                      aria-label={
+                        hasPhoto
+                          ? `Expand day ${day} progress photo`
+                          : `Day ${day} has no progress photo yet`
+                      }
+                    >
+                      {hasPhoto ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={item.progressPhotoUrl} alt={`Day ${day} progress`} />
+                      ) : (
+                        <div className="tile-placeholder">
+                          <ImageIcon size={22} />
+                        </div>
+                      )}
+                      <div className="tile-scrim" />
+                      <div className="tile-meta">
+                        <span>Day {day}</span>
+                        <Star size={24} fill="currentColor" />
                       </div>
-                    )}
-                    <div className="tile-scrim" />
-                    <div className="tile-meta">
-                      <span>Day {day}</span>
-                      <Star size={27} fill="currentColor" />
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </section>
         )}
       </main>

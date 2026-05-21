@@ -17,6 +17,9 @@ export type UserProfile = {
   createdAt?: unknown;
   email?: string | null;
   phoneNumber?: string | null;
+  timezone?: string;
+  fcmTokens?: string[];
+  lastSent?: { morning?: string; evening?: string; night?: string };
 };
 
 export const coreTaskKeys = [

@@ -337,7 +337,8 @@ button {
 
 .hero-status,
 .task-list,
-.photo-panel {
+.photo-panel,
+.reminder-panel {
   border-radius: 30px;
 }
 
@@ -519,6 +520,48 @@ button {
   color: rgba(16, 20, 25, 0.48);
   font-size: 13px;
   font-weight: 800;
+  text-align: center;
+}
+
+.reminder-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+}
+
+.reminder-copy {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.reminder-copy h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.reminder-copy p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.reminder-instructions {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.4);
+  color: rgba(16, 20, 25, 0.72);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.reminder-status {
+  margin: 0;
+  color: rgba(16, 20, 25, 0.58);
+  font-size: 12px;
+  font-weight: 700;
   text-align: center;
 }
 

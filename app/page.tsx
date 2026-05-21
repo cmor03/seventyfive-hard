@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Bell,
+  BellOff,
   CalendarDays,
   Camera,
   Check,
@@ -55,6 +57,13 @@ import {
   type StarStatus,
   type UserProfile,
 } from "@/lib/progress";
+import {
+  browserTimezone,
+  isIos,
+  isStandalone,
+  pushSupported,
+  registerPush,
+} from "@/lib/messaging";
 
 type ViewMode = "today" | "progress";
 const recaptchaContainerId = "phone-recaptcha-container";
@@ -189,6 +198,11 @@ export default function Home() {
   const [expandedProgressDate, setExpandedProgressDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [notifyState, setNotifyState] = useState<
+    "idle" | "supported" | "granted" | "denied" | "unsupported" | "needs-install"
+  >("idle");
+  const [notifyBusy, setNotifyBusy] = useState(false);
+  const [notifyMessage, setNotifyMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
@@ -329,6 +343,43 @@ export default function Home() {
     });
   }, [progress]);
 
+  useEffect(() => {
+    if (!user || !db || !profile) return;
+    const tz = browserTimezone();
+    if (profile.timezone === tz) return;
+    const activeDb = db;
+    setDoc(doc(activeDb, "users", user.uid), { timezone: tz }, { merge: true }).catch(() => {});
+  }, [profile, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const detect = async () => {
+      const supported = await pushSupported();
+      if (cancelled) return;
+      if (!supported) {
+        setNotifyState("unsupported");
+        return;
+      }
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        setNotifyState("granted");
+        return;
+      }
+      if (typeof Notification !== "undefined" && Notification.permission === "denied") {
+        setNotifyState("denied");
+        return;
+      }
+      if (isIos() && !isStandalone()) {
+        setNotifyState("needs-install");
+        return;
+      }
+      setNotifyState("supported");
+    };
+    detect();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   function readableError(error: unknown) {
     if (error instanceof FirebaseError) {
       if (error.code === "auth/operation-not-allowed") {
@@ -419,10 +470,30 @@ export default function Home() {
       createdAt: serverTimestamp(),
       email: user.email,
       phoneNumber: user.phoneNumber,
+      timezone: browserTimezone(),
     };
     await setDoc(doc(activeDb, "users", user.uid), nextProfile, { merge: true });
     setProfile(nextProfile);
     setBusy(false);
+  }
+
+  async function enableNotifications() {
+    setNotifyBusy(true);
+    setNotifyMessage("");
+    try {
+      const result = await registerPush();
+      if (result.ok) {
+        setNotifyState("granted");
+        setNotifyMessage("Reminders are on. We'll check in morning, evening, and night.");
+      } else {
+        setNotifyState(result.needsInstall ? "needs-install" : "supported");
+        setNotifyMessage(result.reason);
+      }
+    } catch (error) {
+      setNotifyMessage(readableError(error));
+    } finally {
+      setNotifyBusy(false);
+    }
   }
 
   async function toggleTask(key: Task["key"]) {
@@ -726,6 +797,43 @@ export default function Home() {
                 <Upload size={18} />
                 {busy ? "Uploading..." : daily.progressPhotoUrl ? "Replace photo" : "Upload photo"}
               </button>
+            </section>
+
+            <section className="reminder-panel glass-panel" aria-label="Reminders">
+              <div className="reminder-copy">
+                {notifyState === "granted" ? <Bell size={21} /> : <BellOff size={21} />}
+                <div>
+                  <h2>Daily reminders</h2>
+                  <p>
+                    {notifyState === "granted"
+                      ? "We'll nudge you at 7am, 7pm if anything is left, and 10pm when it's done."
+                      : notifyState === "needs-install"
+                      ? "iPhone needs the app installed first."
+                      : notifyState === "denied"
+                      ? "Notifications are blocked in browser settings."
+                      : notifyState === "unsupported"
+                      ? "This browser does not support push notifications."
+                      : "Get a morning kickoff, an evening check-in, and a night wrap-up."}
+                  </p>
+                </div>
+              </div>
+              {notifyState === "granted" ? null : notifyState === "needs-install" ? (
+                <p className="reminder-instructions">
+                  In Safari, tap the share icon and choose Add to Home Screen. Reopen 75 Hard from your
+                  home screen, then come back here to enable reminders.
+                </p>
+              ) : notifyState === "denied" || notifyState === "unsupported" ? null : (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={enableNotifications}
+                  disabled={notifyBusy}
+                >
+                  <Bell size={18} />
+                  {notifyBusy ? "Enabling..." : "Enable reminders"}
+                </button>
+              )}
+              {notifyMessage ? <p className="reminder-status">{notifyMessage}</p> : null}
             </section>
 
             <p className="save-state">{saving ? "Saving..." : "Saved privately"}</p>

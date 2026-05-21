@@ -39,3 +39,25 @@ Add these environment variables in Vercel before deploying:
 - `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`
 
 Also add your Vercel domain to Firebase Authentication authorized domains so phone sign-in can complete.
+
+## Reminders (web push)
+
+The app can send three daily push notifications:
+
+- 7am local time: "Day X of 75 Hard."
+- 7pm local time: a check-in listing any remaining items.
+- 10pm local time: a "great work" message when every item is done.
+
+### Firebase setup
+
+1. In the Firebase console open **Project settings → Cloud Messaging → Web push certificates** and generate a key pair. Copy the public key into `NEXT_PUBLIC_FIREBASE_VAPID_KEY`.
+2. Open **Project settings → Service accounts** and click **Generate new private key**. Paste the entire JSON into `FIREBASE_SERVICE_ACCOUNT_JSON` on Vercel (escape newlines in the private key as `\n` or keep them literal — both work).
+3. Set a random string in `CRON_SECRET`. Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` to `/api/cron/notify`.
+
+### Vercel cron
+
+`vercel.json` schedules `/api/cron/notify` to run hourly. On the Hobby tier crons run only once per day, which covers only one of the three slots — use a Pro project, or trigger the endpoint externally (cron-job.org, GitHub Actions, etc.) with the same bearer token to get all three.
+
+### iOS users
+
+iOS Safari requires the app to be installed before push works. In Safari, tap the share icon and choose **Add to Home Screen**, reopen 75 Hard from the home screen, then tap **Enable reminders** on the Today tab. macOS Safari, Chrome, Firefox, and Android Chrome all work without installing.

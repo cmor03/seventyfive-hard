@@ -4,12 +4,23 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "75 hard",
   description: "Private 75 Hard progress tracker.",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "75 Hard",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#0b0c10",
 };
 
 export default function RootLayout({

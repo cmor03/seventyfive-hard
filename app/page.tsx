@@ -222,6 +222,7 @@ export default function Home() {
   >("idle");
   const [notifyBusy, setNotifyBusy] = useState(false);
   const [notifyMessage, setNotifyMessage] = useState("");
+  const [photoUploadDateKey, setPhotoUploadDateKey] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
@@ -609,37 +610,62 @@ export default function Home() {
     }
   }
 
-  async function uploadPhoto(file?: File) {
-    if (!file || !user || !storage) return;
+  async function uploadPhoto(file?: File, targetDateKey = currentDateKey) {
+    if (!file || !user || !db || !storage) return;
     if (!isAcceptedImage(file)) {
       setAuthMessage("Please choose an image file.");
       return;
     }
 
+    const existingRecord =
+      targetDateKey === currentDateKey
+        ? daily
+        : recordFromData(progress[targetDateKey] ?? emptyDailyRecord);
+    const activeDb = db;
     setBusy(true);
     setAuthMessage("");
 
     try {
       const imageFile = await uploadableImage(file);
       const extension = fileExtension(imageFile);
-      const photoRef = ref(storage, `users/${user.uid}/progress/${currentDateKey}.${extension}`);
+      const photoRef = ref(storage, `users/${user.uid}/progress/${targetDateKey}.${extension}`);
       await uploadBytes(photoRef, imageFile, {
         contentType: imageFile.type || "image/jpeg",
         customMetadata: {
-          date: currentDateKey,
+          date: targetDateKey,
           originalType: file.type || "unknown",
           convertedFromHeic: `${isHeicFile(file)}`,
         },
       });
       const progressPhotoUrl = await getDownloadURL(photoRef);
-      await persistDaily({ ...daily, progressPhotoUrl });
-      setAuthMessage("Progress photo saved.");
+      const withStatus = {
+        ...existingRecord,
+        progressPhotoUrl,
+        status: calculateStatus({ ...existingRecord, progressPhotoUrl }),
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(doc(activeDb, "users", user.uid, "daily", targetDateKey), withStatus, {
+        merge: true,
+      });
+      setProgress((items) => ({ ...items, [targetDateKey]: withStatus }));
+      if (targetDateKey === currentDateKey) {
+        setDaily(withStatus);
+      }
+      setAuthMessage(
+        targetDateKey === currentDateKey ? "Progress photo saved." : "Past progress photo saved.",
+      );
     } catch (error) {
       setAuthMessage(readableError(error));
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
+      setPhotoUploadDateKey(null);
       setBusy(false);
     }
+  }
+
+  function choosePhotoForDate(dateKey = currentDateKey) {
+    setPhotoUploadDateKey(dateKey);
+    fileInputRef.current?.click();
   }
 
   async function handleSignOut() {
@@ -683,6 +709,8 @@ export default function Home() {
             NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
             <br />
             NEXT_PUBLIC_FIREBASE_APP_ID
+            <br />
+            NEXT_PUBLIC_FIREBASE_VAPID_KEY
           </code>
         </section>
       </Shell>
@@ -1013,7 +1041,7 @@ export default function Home() {
                 <button
                   className="photo-placeholder"
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => choosePhotoForDate()}
                 >
                   <ImageIcon size={26} />
                   <span>Add today’s photo</span>
@@ -1024,12 +1052,12 @@ export default function Home() {
                 className="visually-hidden"
                 type="file"
                 accept="image/*,.heic,.heif"
-                onChange={(event) => uploadPhoto(event.target.files?.[0])}
+                onChange={(event) => uploadPhoto(event.target.files?.[0], photoUploadDateKey ?? currentDateKey)}
               />
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => choosePhotoForDate()}
                 disabled={busy}
               >
                 <Upload size={18} />
@@ -1120,13 +1148,16 @@ export default function Home() {
                       key={dateKey}
                       type="button"
                       onClick={() => {
-                        if (hasPhoto) setExpandedProgressDate(dateKey);
+                        if (hasPhoto) {
+                          setExpandedProgressDate(dateKey);
+                        } else {
+                          choosePhotoForDate(dateKey);
+                        }
                       }}
-                      disabled={!hasPhoto}
                       aria-label={
                         hasPhoto
                           ? `Expand day ${day} progress photo`
-                          : `Day ${day} has no progress photo yet`
+                          : `Upload day ${day} progress photo`
                       }
                     >
                       {hasPhoto ? (

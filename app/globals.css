@@ -713,8 +713,13 @@ button {
 }
 
 .progress-tile.missing-photo {
-  cursor: default;
-  opacity: 0.72;
+  cursor: pointer;
+  opacity: 0.82;
+}
+
+.progress-tile.missing-photo:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 24px 48px rgba(31, 39, 46, 0.16);
 }
 
 .progress-tile:disabled {

@@ -2,7 +2,27 @@
   "crons": [
     {
       "path": "/api/cron/notify",
-      "schedule": "0 * * * *"
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/notify",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/notify",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/notify",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/notify",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/notify",
+      "schedule": "0 5 * * *"
     }
   ]
 }

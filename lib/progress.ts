@@ -14,6 +14,7 @@ export type DailyRecord = {
 
 export type UserProfile = {
   startDate: string;
+  name?: string | null;
   createdAt?: unknown;
   email?: string | null;
   phoneNumber?: string | null;

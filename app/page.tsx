@@ -6,7 +6,6 @@ import {
   CalendarDays,
   Camera,
   Check,
-  ChevronLeft,
   ChevronRight,
   Dumbbell,
   Droplets,
@@ -14,10 +13,14 @@ import {
   LogOut,
   Phone,
   Salad,
+  Save,
+  Settings,
   ShieldCheck,
   Sparkles,
   Star,
   Upload,
+  UserRound,
+  X,
 } from "lucide-react";
 import {
   FormEvent,
@@ -54,7 +57,6 @@ import {
   dateKeyForDay,
   dayNumberFromStart,
   emptyDailyRecord,
-  parseDateKey,
   todayKey,
   type DailyRecord,
   type StarStatus,
@@ -133,14 +135,6 @@ function statusLabel(status: StarStatus) {
   return "Still in progress";
 }
 
-function formatDateLabel(dateKey: string) {
-  return parseDateKey(dateKey).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function normalizePhoneNumber(value: string) {
   const trimmed = value.trim();
 
@@ -194,6 +188,10 @@ async function uploadableImage(file: File) {
   return new File([jpegBlob], filename, { type: "image/jpeg" });
 }
 
+function displayNameLabel(name: string) {
+  return name.trim() || "there";
+}
+
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -202,7 +200,13 @@ export default function Home() {
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [authMessage, setAuthMessage] = useState("");
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileName, setProfileName] = useState("");
   const [startDate, setStartDate] = useState(todayKey());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsName, setSettingsName] = useState("");
+  const [settingsStartDate, setSettingsStartDate] = useState(todayKey());
+  const [settingsMessage, setSettingsMessage] = useState("");
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [daily, setDaily] = useState<DailyRecord>(emptyDailyRecord);
   const [progress, setProgress] = useState<Record<string, DailyRecord>>({});
   const [view, setView] = useState<ViewMode>("today");
@@ -222,6 +226,7 @@ export default function Home() {
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
   const currentDateKey = todayKey();
+  const displayName = displayNameLabel(profile?.name || user?.displayName || profileName);
   const earliestDataDate = useMemo(() => {
     const keys = Object.keys(progress);
     if (keys.length === 0) return null;
@@ -229,14 +234,8 @@ export default function Home() {
   }, [progress]);
   const effectiveStartDate = useMemo(() => {
     if (!profile) return todayKey();
-    if (earliestDataDate && earliestDataDate < profile.startDate) {
-      return earliestDataDate;
-    }
-    return profile.startDate;
+    return earliestDataDate ?? profile.startDate;
   }, [earliestDataDate, profile]);
-  const startDateNeedsRepair = Boolean(
-    profile && earliestDataDate && earliestDataDate < profile.startDate,
-  );
   const currentDay = dayNumberFromStart(effectiveStartDate);
   const visibleDays = useMemo(
     () => Array.from({ length: currentDay }, (_, index) => index + 1),
@@ -334,6 +333,7 @@ export default function Home() {
         if (profileSnap.exists()) {
           const nextProfile = profileSnap.data() as UserProfile;
           setProfile(nextProfile);
+          setProfileName(nextProfile.name ?? "");
           setStartDate(nextProfile.startDate);
           setProfileStatus("ready");
         } else {
@@ -523,6 +523,7 @@ export default function Home() {
       if (existingSnap.exists()) {
         const existingProfile = existingSnap.data() as UserProfile;
         setProfile(existingProfile);
+        setProfileName(existingProfile.name ?? "");
         setStartDate(existingProfile.startDate);
         setProfileStatus("ready");
         setAuthMessage("");
@@ -530,6 +531,7 @@ export default function Home() {
       }
 
       const nextProfile: UserProfile = {
+        name: profileName.trim(),
         startDate,
         createdAt: serverTimestamp(),
         email: user.email,
@@ -538,27 +540,8 @@ export default function Home() {
       };
       await setDoc(profileRef, nextProfile, { merge: true });
       setProfile(nextProfile);
+      setProfileName(nextProfile.name ?? "");
       setProfileStatus("ready");
-    } catch (error) {
-      setAuthMessage(readableError(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function restoreStartDate() {
-    if (!user || !db || !profile || !earliestDataDate) return;
-    const activeDb = db;
-    setBusy(true);
-    try {
-      await setDoc(
-        doc(activeDb, "users", user.uid),
-        { startDate: earliestDataDate },
-        { merge: true },
-      );
-      setProfile({ ...profile, startDate: earliestDataDate });
-      setStartDate(earliestDataDate);
-      setAuthMessage("Start date restored.");
     } catch (error) {
       setAuthMessage(readableError(error));
     } finally {
@@ -582,6 +565,37 @@ export default function Home() {
       setNotifyMessage(readableError(error));
     } finally {
       setNotifyBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!profile) return;
+    setSettingsName(profile.name ?? "");
+    setSettingsStartDate(profile.startDate);
+  }, [profile]);
+
+  async function saveSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user || !db || !profile) return;
+    const activeDb = db;
+    const nextName = settingsName.trim();
+    setSettingsSaving(true);
+    setSettingsMessage("");
+
+    try {
+      const updates: Pick<UserProfile, "name" | "startDate"> = {
+        name: nextName,
+        startDate: settingsStartDate,
+      };
+      await setDoc(doc(activeDb, "users", user.uid), updates, { merge: true });
+      setProfile({ ...profile, ...updates });
+      setProfileName(nextName);
+      setStartDate(settingsStartDate);
+      setSettingsMessage("Settings saved.");
+    } catch (error) {
+      setSettingsMessage(readableError(error));
+    } finally {
+      setSettingsSaving(false);
     }
   }
 
@@ -636,6 +650,8 @@ export default function Home() {
     setProfileStatus("loading");
     setDaily(emptyDailyRecord);
     setProgress({});
+    setSettingsOpen(false);
+    setSettingsMessage("");
     setExpandedProgressDate(null);
     setConfirmationResult(null);
     setSmsCode("");
@@ -789,9 +805,22 @@ export default function Home() {
           </div>
           <h1>When did day one begin?</h1>
           <p className="muted">
-            The app will calculate the current day automatically from this date.
+            Add your name and start date. The app will calculate the current day automatically.
           </p>
           <form className="auth-form" onSubmit={saveProfile}>
+            <label htmlFor="profileName">Name</label>
+            <div className="email-field">
+              <UserRound size={18} />
+              <input
+                id="profileName"
+                type="text"
+                autoComplete="name"
+                placeholder="Your name"
+                value={profileName}
+                onChange={(event) => setProfileName(event.target.value)}
+                required
+              />
+            </div>
             <label htmlFor="startDate">Start date</label>
             <input
               className="date-input"
@@ -814,39 +843,100 @@ export default function Home() {
     <Shell>
       <main className="app-frame">
         <header className="top-bar glass-panel">
-          <button className="icon-button" aria-label="Previous view" type="button">
-            <ChevronLeft size={20} />
-          </button>
+          <p className="greeting">Hello, {displayName}</p>
           <div className="day-display">
             <span>Day</span>
             <strong>{currentDay}</strong>
             <span>of 75</span>
           </div>
-          <button className="icon-button" aria-label="Sign out" type="button" onClick={handleSignOut}>
-            <LogOut size={19} />
-          </button>
+          <div className="top-actions">
+            <button
+              className="icon-button"
+              aria-label="Open settings"
+              type="button"
+              onClick={() => {
+                setSettingsMessage("");
+                setSettingsOpen(true);
+              }}
+            >
+              <Settings size={19} />
+            </button>
+            <button className="icon-button" aria-label="Sign out" type="button" onClick={handleSignOut}>
+              <LogOut size={19} />
+            </button>
+          </div>
         </header>
 
-        {startDateNeedsRepair && earliestDataDate ? (
-          <div className="repair-banner glass-panel" role="alert">
-            <div className="repair-copy">
-              <CalendarDays size={20} />
-              <div>
-                <strong>Your start date looks off</strong>
-                <span>
-                  We found entries dating back to {formatDateLabel(earliestDataDate)}. Your progress
-                  is shown below — restore that date as day one to lock it back in.
-                </span>
-              </div>
-            </div>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={restoreStartDate}
-              disabled={busy}
+        {settingsOpen ? (
+          <div className="settings-scrim" role="presentation" onClick={() => setSettingsOpen(false)}>
+            <section
+              className="settings-menu glass-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="settings-title"
+              onClick={(event) => event.stopPropagation()}
             >
-              {busy ? "Restoring..." : "Restore start date"}
-            </button>
+              <div className="settings-heading">
+                <div>
+                  <p>Settings</p>
+                  <h2 id="settings-title">Profile</h2>
+                </div>
+                <button
+                  className="icon-button"
+                  aria-label="Close settings"
+                  type="button"
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form className="settings-form" onSubmit={saveSettings}>
+                <label htmlFor="settingsName">Name</label>
+                <div className="email-field">
+                  <UserRound size={18} />
+                  <input
+                    id="settingsName"
+                    type="text"
+                    autoComplete="name"
+                    placeholder="Your name"
+                    value={settingsName}
+                    onChange={(event) => setSettingsName(event.target.value)}
+                  />
+                </div>
+
+                <label htmlFor="settingsStartDate">Start date</label>
+                <input
+                  className="date-input"
+                  id="settingsStartDate"
+                  type="date"
+                  value={settingsStartDate}
+                  onChange={(event) => setSettingsStartDate(event.target.value)}
+                  required
+                />
+
+                <div className="profile-facts">
+                  <div>
+                    <span>Signed in</span>
+                    <strong>{user.phoneNumber || user.email || "Private account"}</strong>
+                  </div>
+                  <div>
+                    <span>Timezone</span>
+                    <strong>{profile.timezone || browserTimezone()}</strong>
+                  </div>
+                  <div>
+                    <span>Current day</span>
+                    <strong>{currentDay} of 75</strong>
+                  </div>
+                </div>
+
+                <button className="primary-button" type="submit" disabled={settingsSaving}>
+                  <Save size={18} />
+                  {settingsSaving ? "Saving..." : "Save settings"}
+                </button>
+              </form>
+              {settingsMessage ? <p className="settings-status">{settingsMessage}</p> : null}
+            </section>
           </div>
         ) : null}
 

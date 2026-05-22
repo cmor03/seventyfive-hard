@@ -279,6 +279,21 @@ button {
   padding: 10px;
 }
 
+.greeting {
+  min-width: 0;
+  margin: 0 12px;
+  color: rgba(16, 20, 25, 0.74);
+  font-size: 17px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.top-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .icon-button {
   display: grid;
   width: 48px;
@@ -305,45 +320,102 @@ button {
   line-height: 1;
 }
 
+.settings-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  padding: 88px 18px 18px;
+  background: rgba(16, 20, 25, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.settings-menu {
+  width: min(100%, 440px);
+  height: fit-content;
+  max-height: calc(100svh - 106px);
+  overflow: auto;
+  border-radius: 28px;
+  padding: 16px;
+}
+
+.settings-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.settings-heading p {
+  margin: 0 0 4px;
+  color: rgba(16, 20, 25, 0.58);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.settings-heading h2 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.settings-form {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-form label {
+  color: rgba(16, 20, 25, 0.72);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.profile-facts {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.profile-facts div {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.42);
+  padding: 10px 12px;
+}
+
+.profile-facts span {
+  color: rgba(16, 20, 25, 0.56);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.profile-facts strong {
+  min-width: 0;
+  color: rgba(16, 20, 25, 0.78);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.settings-status {
+  margin: 12px 0 0;
+  color: rgba(16, 20, 25, 0.62);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
 .view-tabs {
   width: fit-content;
   gap: 5px;
   margin: 16px auto 22px;
   padding: 5px;
-}
-
-.repair-banner {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 14px;
-  padding: 14px 16px;
-  border-radius: 24px;
-}
-
-.repair-copy {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.repair-copy strong {
-  display: block;
-  font-size: 15px;
-}
-
-.repair-copy span {
-  display: block;
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.repair-banner .secondary-button {
-  flex: 0 0 auto;
 }
 
 .view-tabs button {
@@ -803,8 +875,34 @@ button {
     border-radius: 24px;
   }
 
+  .greeting {
+    flex: 1 1 86px;
+    margin: 0 6px;
+    font-size: 14px;
+  }
+
+  .top-actions {
+    gap: 5px;
+  }
+
+  .top-actions .icon-button {
+    width: 42px;
+    height: 42px;
+    border-radius: 15px;
+  }
+
+  .settings-scrim {
+    align-items: flex-start;
+    padding-top: 74px;
+  }
+
   .day-display strong {
     font-size: 38px;
+  }
+
+  .day-display {
+    flex: 0 0 auto;
+    gap: 6px;
   }
 
   .view-tabs {

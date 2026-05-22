@@ -222,8 +222,8 @@ export default function Home() {
   >("idle");
   const [notifyBusy, setNotifyBusy] = useState(false);
   const [notifyMessage, setNotifyMessage] = useState("");
-  const [photoUploadDateKey, setPhotoUploadDateKey] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const photoUploadDateKeyRef = useRef<string | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
   const currentDateKey = todayKey();
@@ -659,13 +659,13 @@ export default function Home() {
       setAuthMessage(readableError(error));
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
-      setPhotoUploadDateKey(null);
+      photoUploadDateKeyRef.current = null;
       setBusy(false);
     }
   }
 
   function choosePhotoForDate(dateKey = currentDateKey) {
-    setPhotoUploadDateKey(dateKey);
+    photoUploadDateKeyRef.current = dateKey;
     fileInputRef.current?.click();
   }
 
@@ -989,6 +989,16 @@ export default function Home() {
           </button>
         </nav>
 
+        <input
+          ref={fileInputRef}
+          className="visually-hidden"
+          type="file"
+          accept="image/*,.heic,.heif"
+          onChange={(event) =>
+            uploadPhoto(event.target.files?.[0], photoUploadDateKeyRef.current ?? currentDateKey)
+          }
+        />
+
         {view === "today" ? (
           <section className="daily-layout">
             <div className={`hero-status glass-panel ${daily.status}`}>
@@ -1048,13 +1058,6 @@ export default function Home() {
                   <span>Add today’s photo</span>
                 </button>
               )}
-              <input
-                ref={fileInputRef}
-                className="visually-hidden"
-                type="file"
-                accept="image/*,.heic,.heif"
-                onChange={(event) => uploadPhoto(event.target.files?.[0], photoUploadDateKey ?? currentDateKey)}
-              />
               <button
                 className="secondary-button"
                 type="button"

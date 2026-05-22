@@ -312,6 +312,40 @@ button {
   padding: 5px;
 }
 
+.repair-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 24px;
+}
+
+.repair-copy {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.repair-copy strong {
+  display: block;
+  font-size: 15px;
+}
+
+.repair-copy span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.repair-banner .secondary-button {
+  flex: 0 0 auto;
+}
+
 .view-tabs button {
   min-width: 112px;
   height: 42px;

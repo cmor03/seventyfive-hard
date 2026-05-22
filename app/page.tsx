@@ -39,8 +39,10 @@ import {
 } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
   serverTimestamp,
   setDoc,
   type DocumentData,
@@ -52,6 +54,7 @@ import {
   dateKeyForDay,
   dayNumberFromStart,
   emptyDailyRecord,
+  parseDateKey,
   todayKey,
   type DailyRecord,
   type StarStatus,
@@ -130,6 +133,14 @@ function statusLabel(status: StarStatus) {
   return "Still in progress";
 }
 
+function formatDateLabel(dateKey: string) {
+  return parseDateKey(dateKey).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function normalizePhoneNumber(value: string) {
   const trimmed = value.trim();
 
@@ -198,6 +209,10 @@ export default function Home() {
   const [expandedProgressDate, setExpandedProgressDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [profileStatus, setProfileStatus] = useState<
+    "loading" | "ready" | "missing" | "error"
+  >("loading");
+  const [reloadKey, setReloadKey] = useState(0);
   const [notifyState, setNotifyState] = useState<
     "idle" | "supported" | "granted" | "denied" | "unsupported" | "needs-install"
   >("idle");
@@ -207,22 +222,38 @@ export default function Home() {
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
   const currentDateKey = todayKey();
-  const currentDay = profile ? dayNumberFromStart(profile.startDate) : 1;
+  const earliestDataDate = useMemo(() => {
+    const keys = Object.keys(progress);
+    if (keys.length === 0) return null;
+    return keys.reduce((earliest, key) => (key < earliest ? key : earliest));
+  }, [progress]);
+  const effectiveStartDate = useMemo(() => {
+    if (!profile) return todayKey();
+    if (earliestDataDate && earliestDataDate < profile.startDate) {
+      return earliestDataDate;
+    }
+    return profile.startDate;
+  }, [earliestDataDate, profile]);
+  const startDateNeedsRepair = Boolean(
+    profile && earliestDataDate && earliestDataDate < profile.startDate,
+  );
+  const currentDay = dayNumberFromStart(effectiveStartDate);
   const visibleDays = useMemo(
     () => Array.from({ length: currentDay }, (_, index) => index + 1),
     [currentDay],
   );
   const expandedProgress = useMemo(() => {
-    if (!expandedProgressDate || !profile) return null;
+    if (!expandedProgressDate) return null;
     const day =
-      visibleDays.find((visibleDay) => dateKeyForDay(profile.startDate, visibleDay) === expandedProgressDate) ??
-      currentDay;
+      visibleDays.find(
+        (visibleDay) => dateKeyForDay(effectiveStartDate, visibleDay) === expandedProgressDate,
+      ) ?? currentDay;
     const item = progress[expandedProgressDate];
 
     if (!item?.progressPhotoUrl) return null;
 
     return { dateKey: expandedProgressDate, day, item };
-  }, [currentDay, expandedProgressDate, profile, progress, visibleDays]);
+  }, [currentDay, effectiveStartDate, expandedProgressDate, progress, visibleDays]);
 
   const persistDaily = useCallback(
     async (nextRecord: DailyRecord) => {
@@ -285,53 +316,73 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadProfileAndToday = async () => {
       if (!user || !db) {
         setProfile(null);
+        setProfileStatus("loading");
         return;
       }
       const activeDb = db;
+      setProfileStatus("loading");
 
-      const profileRef = doc(activeDb, "users", user.uid);
-      const profileSnap = await getDoc(profileRef);
+      try {
+        const profileSnap = await getDoc(doc(activeDb, "users", user.uid));
+        if (cancelled) return;
 
-      if (profileSnap.exists()) {
-        const nextProfile = profileSnap.data() as UserProfile;
-        setProfile(nextProfile);
-        setStartDate(nextProfile.startDate);
-      } else {
-        setProfile(null);
+        if (profileSnap.exists()) {
+          const nextProfile = profileSnap.data() as UserProfile;
+          setProfile(nextProfile);
+          setStartDate(nextProfile.startDate);
+          setProfileStatus("ready");
+        } else {
+          setProfile(null);
+          setProfileStatus("missing");
+        }
+
+        const todaySnap = await getDoc(doc(activeDb, "users", user.uid, "daily", currentDateKey));
+        if (cancelled) return;
+        setDaily(recordFromData(todaySnap.data()));
+      } catch (error) {
+        if (cancelled) return;
+        setProfileStatus("error");
+        setAuthMessage(readableError(error));
       }
-
-      const todaySnap = await getDoc(doc(activeDb, "users", user.uid, "daily", currentDateKey));
-      setDaily(recordFromData(todaySnap.data()));
     };
 
-    loadProfileAndToday().catch((error: Error) => {
-      setAuthMessage(error.message);
-    });
-  }, [currentDateKey, user]);
+    loadProfileAndToday();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentDateKey, user, reloadKey]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadProgress = async () => {
       if (!user || !db || !profile) return;
       const activeDb = db;
 
-      const dayEntries = await Promise.all(
-        visibleDays.map(async (day) => {
-          const dateKey = dateKeyForDay(profile.startDate, day);
-          const snapshot = await getDoc(doc(activeDb, "users", user.uid, "daily", dateKey));
-          return [dateKey, recordFromData(snapshot.data())] as const;
-        }),
-      );
+      const snapshot = await getDocs(collection(activeDb, "users", user.uid, "daily"));
+      if (cancelled) return;
 
-      setProgress(Object.fromEntries(dayEntries));
+      const records: Record<string, DailyRecord> = {};
+      snapshot.forEach((entry) => {
+        records[entry.id] = recordFromData(entry.data());
+      });
+      setProgress(records);
     };
 
     loadProgress().catch((error: Error) => {
-      setAuthMessage(error.message);
+      if (!cancelled) setAuthMessage(error.message);
     });
-  }, [profile, user, visibleDays]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, user]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -465,16 +516,54 @@ export default function Home() {
     if (!user || !db) return;
     const activeDb = db;
     setBusy(true);
-    const nextProfile: UserProfile = {
-      startDate,
-      createdAt: serverTimestamp(),
-      email: user.email,
-      phoneNumber: user.phoneNumber,
-      timezone: browserTimezone(),
-    };
-    await setDoc(doc(activeDb, "users", user.uid), nextProfile, { merge: true });
-    setProfile(nextProfile);
-    setBusy(false);
+    try {
+      const profileRef = doc(activeDb, "users", user.uid);
+      const existingSnap = await getDoc(profileRef);
+
+      if (existingSnap.exists()) {
+        const existingProfile = existingSnap.data() as UserProfile;
+        setProfile(existingProfile);
+        setStartDate(existingProfile.startDate);
+        setProfileStatus("ready");
+        setAuthMessage("");
+        return;
+      }
+
+      const nextProfile: UserProfile = {
+        startDate,
+        createdAt: serverTimestamp(),
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        timezone: browserTimezone(),
+      };
+      await setDoc(profileRef, nextProfile, { merge: true });
+      setProfile(nextProfile);
+      setProfileStatus("ready");
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restoreStartDate() {
+    if (!user || !db || !profile || !earliestDataDate) return;
+    const activeDb = db;
+    setBusy(true);
+    try {
+      await setDoc(
+        doc(activeDb, "users", user.uid),
+        { startDate: earliestDataDate },
+        { merge: true },
+      );
+      setProfile({ ...profile, startDate: earliestDataDate });
+      setStartDate(earliestDataDate);
+      setAuthMessage("Start date restored.");
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function enableNotifications() {
@@ -544,6 +633,7 @@ export default function Home() {
     await signOut(auth);
     setUser(null);
     setProfile(null);
+    setProfileStatus("loading");
     setDaily(emptyDailyRecord);
     setProgress({});
     setExpandedProgressDate(null);
@@ -652,6 +742,41 @@ export default function Home() {
     );
   }
 
+  if (profileStatus === "loading") {
+    return (
+      <Shell>
+        <div className="loading-orb" aria-label="Loading" />
+      </Shell>
+    );
+  }
+
+  if (profileStatus === "error") {
+    return (
+      <Shell>
+        <section className="auth-card glass-panel">
+          <div className="brand-lockup">
+            <div className="app-icon">
+              <Star size={26} fill="currentColor" />
+            </div>
+            <p>75 hard</p>
+          </div>
+          <h1>We couldn&apos;t load your tracker.</h1>
+          <p className="muted">
+            Your progress is safe. This is usually a network hiccup — try again.
+          </p>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => setReloadKey((key) => key + 1)}
+          >
+            Try again
+          </button>
+          {authMessage ? <p className="system-message">{authMessage}</p> : null}
+        </section>
+      </Shell>
+    );
+  }
+
   if (!profile) {
     return (
       <Shell>
@@ -701,6 +826,29 @@ export default function Home() {
             <LogOut size={19} />
           </button>
         </header>
+
+        {startDateNeedsRepair && earliestDataDate ? (
+          <div className="repair-banner glass-panel" role="alert">
+            <div className="repair-copy">
+              <CalendarDays size={20} />
+              <div>
+                <strong>Your start date looks off</strong>
+                <span>
+                  We found entries dating back to {formatDateLabel(earliestDataDate)}. Your progress
+                  is shown below — restore that date as day one to lock it back in.
+                </span>
+              </div>
+            </div>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={restoreStartDate}
+              disabled={busy}
+            >
+              {busy ? "Restoring..." : "Restore start date"}
+            </button>
+          </div>
+        ) : null}
 
         <nav className="view-tabs glass-panel" aria-label="Primary">
           <button
@@ -872,7 +1020,7 @@ export default function Home() {
             ) : (
               <div className="progress-grid">
                 {visibleDays.map((day) => {
-                  const dateKey = dateKeyForDay(profile.startDate, day);
+                  const dateKey = dateKeyForDay(effectiveStartDate, day);
                   const item = progress[dateKey] || emptyDailyRecord;
                   const hasPhoto = Boolean(item.progressPhotoUrl);
 

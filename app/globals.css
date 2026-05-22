@@ -682,6 +682,14 @@ button {
   margin: 6px 0 18px;
 }
 
+.app-version {
+  margin: 24px 0 0;
+  color: rgba(16, 20, 25, 0.42);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
 .progress-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -779,11 +787,17 @@ button {
   filter: drop-shadow(0 4px 10px rgba(47, 140, 255, 0.38));
 }
 
+.expanded-photo-panel {
+  display: grid;
+  width: min(100%, 920px);
+  gap: 12px;
+  margin: 0 auto;
+}
+
 .expanded-photo-view {
   position: relative;
   display: block;
-  width: min(100%, 920px);
-  margin: 0 auto;
+  width: 100%;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 18px;
@@ -811,6 +825,11 @@ button {
   color: #fff;
   font-weight: 900;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.32);
+}
+
+.expanded-upload-button {
+  width: min(100%, 360px);
+  justify-self: center;
 }
 
 .expanded-photo-view.gray .expanded-photo-meta svg {

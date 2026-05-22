@@ -6,7 +6,6 @@ import {
   CalendarDays,
   Camera,
   Check,
-  ChevronRight,
   Dumbbell,
   Droplets,
   ImageIcon,
@@ -72,6 +71,7 @@ import {
 
 type ViewMode = "today" | "progress";
 const recaptchaContainerId = "phone-recaptcha-container";
+const appVersion = "0.1.0";
 
 type Task = {
   key: keyof Omit<DailyRecord, "progressPhotoUrl" | "status" | "updatedAt">;
@@ -242,6 +242,7 @@ export default function Home() {
     () => Array.from({ length: currentDay }, (_, index) => index + 1),
     [currentDay],
   );
+  const visibleDaysNewestFirst = useMemo(() => [...visibleDays].reverse(), [visibleDays]);
   const expandedProgress = useMemo(() => {
     if (!expandedProgressDate) return null;
     const day =
@@ -1112,32 +1113,40 @@ export default function Home() {
                 <p>Progress</p>
                 <h1>Revel a little.</h1>
               </div>
-              <button className="icon-button" aria-label="Next view" type="button">
-                <ChevronRight size={20} />
-              </button>
             </div>
             {expandedProgress ? (
-              <button
-                className={`expanded-photo-view ${expandedProgress.item.status}`}
-                type="button"
-                onClick={() => setExpandedProgressDate(null)}
-                aria-label={`Collapse day ${expandedProgress.day} progress photo`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={expandedProgress.item.progressPhotoUrl}
-                  alt={`Day ${expandedProgress.day} progress expanded`}
-                  loading="eager"
-                  fetchPriority="high"
-                />
-                <span className="expanded-photo-meta">
-                  <span>Day {expandedProgress.day}</span>
-                  <Star size={32} fill="currentColor" />
-                </span>
-              </button>
+              <div className="expanded-photo-panel">
+                <button
+                  className={`expanded-photo-view ${expandedProgress.item.status}`}
+                  type="button"
+                  onClick={() => setExpandedProgressDate(null)}
+                  aria-label={`Collapse day ${expandedProgress.day} progress photo`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={expandedProgress.item.progressPhotoUrl}
+                    alt={`Day ${expandedProgress.day} progress expanded`}
+                    loading="eager"
+                    fetchPriority="high"
+                  />
+                  <span className="expanded-photo-meta">
+                    <span>Day {expandedProgress.day}</span>
+                    <Star size={32} fill="currentColor" />
+                  </span>
+                </button>
+                <button
+                  className="secondary-button expanded-upload-button"
+                  type="button"
+                  onClick={() => choosePhotoForDate(expandedProgress.dateKey)}
+                  disabled={busy}
+                >
+                  <Upload size={18} />
+                  {busy ? "Uploading..." : "Replace photo"}
+                </button>
+              </div>
             ) : (
               <div className="progress-grid">
-                {visibleDays.map((day) => {
+                {visibleDaysNewestFirst.map((day) => {
                   const dateKey = dateKeyForDay(effectiveStartDate, day);
                   const item = progress[dateKey] || emptyDailyRecord;
                   const hasPhoto = Boolean(item.progressPhotoUrl);
@@ -1185,6 +1194,7 @@ export default function Home() {
             )}
           </section>
         )}
+        <footer className="app-version">v{appVersion}</footer>
       </main>
     </Shell>
   );

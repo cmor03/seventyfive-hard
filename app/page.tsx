@@ -1,9 +1,6 @@
 "use client";
 
 import {
-  Award,
-  Bell,
-  BellOff,
   BookOpen,
   CalendarDays,
   Camera,
@@ -12,6 +9,7 @@ import {
   Droplets,
   Flame,
   ImageIcon,
+  Info,
   Lock,
   LogOut,
   Phone,
@@ -71,22 +69,40 @@ import {
   type StarStatus,
   type UserProfile,
 } from "@/lib/progress";
-import {
-  browserTimezone,
-  isIos,
-  isStandalone,
-  pushSupported,
-  registerPush,
-} from "@/lib/messaging";
+import { browserTimezone } from "@/lib/messaging";
 
 type ViewMode = "today" | "progress";
 const recaptchaContainerId = "phone-recaptcha-container";
 const appVersion = "0.1.0";
 
+type InfoTopic = { title: string; body: string };
+
+const infoTopics = {
+  stars: {
+    title: "How stars work",
+    body: "Gray means the day is still in progress. Earn a gold star by finishing the five core habits and posting a progress photo. Earn a blue star by also doing 30 minutes of LeetCode. Every blue star banks one repair token.",
+  },
+  streak: {
+    title: "Day streak",
+    body: "The number of days in a row you've earned at least a gold star. Today still counts as part of the streak until the day ends.",
+  },
+  blue: {
+    title: "Blue stars",
+    body: "Days where you finished everything, including 30 minutes of LeetCode. Each blue star banks one repair token you can spend later.",
+  },
+  gold: {
+    title: "Gold stars",
+    body: "Days where you finished the five core habits and posted a progress photo, but skipped LeetCode.",
+  },
+  tokens: {
+    title: "Repair tokens",
+    body: "You earn one token for every blue star. Spend a token on a past day that already has a photo but that you forgot to fully check off — it fills the five core habits for a gold star. Repaired days never earn new tokens, so the system can't be farmed.",
+  },
+} satisfies Record<string, InfoTopic>;
+
 type Task = {
-  key: keyof Omit<DailyRecord, "progressPhotoUrl" | "status" | "updatedAt">;
+  key: keyof Omit<DailyRecord, "progressPhotoUrl" | "status" | "updatedAt" | "repaired">;
   title: string;
-  detail: string;
   icon: React.ReactNode;
   special?: boolean;
 };
@@ -95,37 +111,31 @@ const tasks: Task[] = [
   {
     key: "workout1",
     title: "Workout",
-    detail: "45 min training block",
     icon: <Dumbbell size={20} />,
   },
   {
     key: "outsideWorkout",
     title: "Outside workout",
-    detail: "Fresh air required",
     icon: <Wind size={20} />,
   },
   {
     key: "strictDiet",
     title: "Strict diet",
-    detail: "No alcohol. No cheat days.",
     icon: <Salad size={20} />,
   },
   {
     key: "waterGallon",
     title: "One gallon of water",
-    detail: "Hydration complete",
     icon: <Droplets size={20} />,
   },
   {
     key: "read10Pages",
     title: "Read 10 pages",
-    detail: "Physical or focused reading",
     icon: <BookOpen size={20} />,
   },
   {
     key: "leetcode30",
     title: "LeetCode 30 minutes",
-    detail: "Blue star accelerator",
     icon: <Star size={20} />,
     special: true,
   },
@@ -227,11 +237,7 @@ export default function Home() {
     "loading" | "ready" | "missing" | "error"
   >("loading");
   const [reloadKey, setReloadKey] = useState(0);
-  const [notifyState, setNotifyState] = useState<
-    "idle" | "supported" | "granted" | "denied" | "unsupported" | "needs-install"
-  >("idle");
-  const [notifyBusy, setNotifyBusy] = useState(false);
-  const [notifyMessage, setNotifyMessage] = useState("");
+  const [info, setInfo] = useState<InfoTopic | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const photoUploadDateKeyRef = useRef<string | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
@@ -442,35 +448,6 @@ export default function Home() {
     setDoc(doc(activeDb, "users", user.uid), { timezone: tz }, { merge: true }).catch(() => {});
   }, [profile, user]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const detect = async () => {
-      const supported = await pushSupported();
-      if (cancelled) return;
-      if (!supported) {
-        setNotifyState("unsupported");
-        return;
-      }
-      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-        setNotifyState("granted");
-        return;
-      }
-      if (typeof Notification !== "undefined" && Notification.permission === "denied") {
-        setNotifyState("denied");
-        return;
-      }
-      if (isIos() && !isStandalone()) {
-        setNotifyState("needs-install");
-        return;
-      }
-      setNotifyState("supported");
-    };
-    detect();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
-
   function readableError(error: unknown) {
     if (error instanceof FirebaseError) {
       if (error.code === "auth/operation-not-allowed") {
@@ -586,25 +563,6 @@ export default function Home() {
       setAuthMessage(readableError(error));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function enableNotifications() {
-    setNotifyBusy(true);
-    setNotifyMessage("");
-    try {
-      const result = await registerPush();
-      if (result.ok) {
-        setNotifyState("granted");
-        setNotifyMessage("Reminders are on. We'll check in morning, evening, and night.");
-      } else {
-        setNotifyState(result.needsInstall ? "needs-install" : "supported");
-        setNotifyMessage(result.reason);
-      }
-    } catch (error) {
-      setNotifyMessage(readableError(error));
-    } finally {
-      setNotifyBusy(false);
     }
   }
 
@@ -797,8 +755,6 @@ export default function Home() {
             NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
             <br />
             NEXT_PUBLIC_FIREBASE_APP_ID
-            <br />
-            NEXT_PUBLIC_FIREBASE_VAPID_KEY
           </code>
         </section>
       </Shell>
@@ -977,14 +933,6 @@ export default function Home() {
             <span>/ 75</span>
           </div>
           <div className="top-actions">
-            <div
-              className={`token-badge ${tokens.available > 0 ? "charged" : ""}`}
-              title="Blue-star repair tokens"
-              aria-label={`${tokens.available} repair tokens available`}
-            >
-              <Wand2 size={15} />
-              <strong>{tokens.available}</strong>
-            </div>
             <button
               className="icon-button"
               aria-label="Open settings"
@@ -995,9 +943,6 @@ export default function Home() {
               }}
             >
               <Settings size={19} />
-            </button>
-            <button className="icon-button" aria-label="Sign out" type="button" onClick={handleSignOut}>
-              <LogOut size={19} />
             </button>
           </div>
         </header>
@@ -1071,6 +1016,35 @@ export default function Home() {
                 </button>
               </form>
               {settingsMessage ? <p className="settings-status">{settingsMessage}</p> : null}
+              <button className="secondary-button signout-button" type="button" onClick={handleSignOut}>
+                <LogOut size={18} />
+                Sign out
+              </button>
+            </section>
+          </div>
+        ) : null}
+
+        {info ? (
+          <div className="settings-scrim" role="presentation" onClick={() => setInfo(null)}>
+            <section
+              className="info-window glass-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="info-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="info-heading">
+                <h2 id="info-title">{info.title}</h2>
+                <button
+                  className="icon-button"
+                  aria-label="Close"
+                  type="button"
+                  onClick={() => setInfo(null)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <p className="info-body">{info.body}</p>
             </section>
           </div>
         ) : null}
@@ -1119,12 +1093,14 @@ export default function Home() {
                       : "Stack the day."}
                   </h1>
                 </div>
-                <div
+                <button
                   className={`status-star ${daily.status !== "gray" ? "lit" : ""}`}
-                  aria-hidden="true"
+                  type="button"
+                  aria-label="What the stars mean"
+                  onClick={() => setInfo(infoTopics.stars)}
                 >
                   <Star size={56} fill="currentColor" />
-                </div>
+                </button>
               </div>
               <div className="hero-progress">
                 <div className="progress-track">
@@ -1140,34 +1116,34 @@ export default function Home() {
             </div>
 
             <section className="stats-bar glass-panel" aria-label="Your stats">
-              <div className="stat">
+              <button className="stat" type="button" onClick={() => setInfo(infoTopics.streak)}>
                 <span className="stat-icon streak">
                   <Flame size={18} />
                 </span>
                 <strong>{streak}</strong>
                 <span>Day streak</span>
-              </div>
-              <div className="stat">
+              </button>
+              <button className="stat" type="button" onClick={() => setInfo(infoTopics.blue)}>
                 <span className="stat-icon blue">
                   <Star size={18} fill="currentColor" />
                 </span>
                 <strong>{starCounts.blue}</strong>
                 <span>Blue stars</span>
-              </div>
-              <div className="stat">
+              </button>
+              <button className="stat" type="button" onClick={() => setInfo(infoTopics.gold)}>
                 <span className="stat-icon gold">
                   <Star size={18} fill="currentColor" />
                 </span>
                 <strong>{starCounts.gold}</strong>
                 <span>Gold stars</span>
-              </div>
-              <div className="stat">
+              </button>
+              <button className="stat" type="button" onClick={() => setInfo(infoTopics.tokens)}>
                 <span className="stat-icon token">
                   <Wand2 size={18} />
                 </span>
                 <strong>{tokens.available}</strong>
                 <span>Repair tokens</span>
-              </div>
+              </button>
             </section>
 
             <section className="task-list glass-panel" aria-label="Daily checklist">
@@ -1183,7 +1159,6 @@ export default function Home() {
                   <span className="task-icon">{task.icon}</span>
                   <span className="task-copy">
                     <strong>{task.title}</strong>
-                    <span>{task.detail}</span>
                   </span>
                   <span className="check-indicator">{daily[task.key] ? <Check size={17} /> : null}</span>
                 </button>
@@ -1193,10 +1168,7 @@ export default function Home() {
             <section className="photo-panel glass-panel">
               <div className="photo-copy">
                 <Camera size={21} />
-                <div>
-                  <h2>Progress picture</h2>
-                  <p>Required for gold and blue stars.</p>
-                </div>
+                <h2>Progress picture</h2>
               </div>
               {daily.progressPhotoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -1226,43 +1198,6 @@ export default function Home() {
                 <Upload size={18} />
                 {busy ? "Uploading..." : daily.progressPhotoUrl ? "Replace photo" : "Upload photo"}
               </button>
-            </section>
-
-            <section className="reminder-panel glass-panel" aria-label="Reminders">
-              <div className="reminder-copy">
-                {notifyState === "granted" ? <Bell size={21} /> : <BellOff size={21} />}
-                <div>
-                  <h2>Daily reminders</h2>
-                  <p>
-                    {notifyState === "granted"
-                      ? "We'll nudge you at 7am, 7pm if anything is left, and 10pm when it's done."
-                      : notifyState === "needs-install"
-                      ? "iPhone needs the app installed first."
-                      : notifyState === "denied"
-                      ? "Notifications are blocked in browser settings."
-                      : notifyState === "unsupported"
-                      ? "This browser does not support push notifications."
-                      : "Get a morning kickoff, an evening check-in, and a night wrap-up."}
-                  </p>
-                </div>
-              </div>
-              {notifyState === "granted" ? null : notifyState === "needs-install" ? (
-                <p className="reminder-instructions">
-                  In Safari, tap the share icon and choose Add to Home Screen. Reopen 75 Hard from your
-                  home screen, then come back here to enable reminders.
-                </p>
-              ) : notifyState === "denied" || notifyState === "unsupported" ? null : (
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={enableNotifications}
-                  disabled={notifyBusy}
-                >
-                  <Bell size={18} />
-                  {notifyBusy ? "Enabling..." : "Enable reminders"}
-                </button>
-              )}
-              {notifyMessage ? <p className="reminder-status">{notifyMessage}</p> : null}
             </section>
 
             <p className="save-state">{saving ? "Saving..." : "Saved privately"}</p>
@@ -1405,25 +1340,21 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className={`token-banner glass-panel ${tokens.available > 0 ? "charged" : ""}`}>
-                  <span className="token-banner-icon">
-                    <Wand2 size={20} />
+                <div className={`token-strip glass-panel ${tokens.available > 0 ? "charged" : ""}`}>
+                  <span className="token-strip-icon">
+                    <Wand2 size={18} />
                   </span>
-                  <div className="token-banner-copy">
-                    <strong>
-                      {tokens.available} repair {tokens.available === 1 ? "token" : "tokens"}
-                    </strong>
-                    <p>
-                      Every blue star you earn banks one token. Open a past day that has a photo and
-                      tap &ldquo;forgot to check something off&rdquo; to spend a token and check off
-                      the day for a gold star.
-                    </p>
-                  </div>
-                  {tokens.spent > 0 ? (
-                    <span className="token-spent" title="Tokens spent">
-                      <Award size={14} /> {tokens.spent} used
-                    </span>
-                  ) : null}
+                  <strong>
+                    {tokens.available} repair {tokens.available === 1 ? "token" : "tokens"}
+                  </strong>
+                  <button
+                    className="info-button"
+                    type="button"
+                    aria-label="What are repair tokens?"
+                    onClick={() => setInfo(infoTopics.tokens)}
+                  >
+                    <Info size={16} />
+                  </button>
                 </div>
 
                 <div className="progress-grid">

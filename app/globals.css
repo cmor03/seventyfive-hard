@@ -666,10 +666,12 @@ code {
   width: 96px;
   height: 96px;
   place-items: center;
-  border-radius: 22px;
+  padding: 0;
+  border-radius: 16px;
   color: var(--gray);
   border: 1px solid var(--edge);
   background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
   transition: color 200ms ease, box-shadow 200ms ease;
 }
 
@@ -742,8 +744,17 @@ code {
   justify-items: center;
   gap: 3px;
   padding: 14px 8px;
-  border-radius: 14px;
+  border: 0;
+  border-radius: 10px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
   text-align: center;
+  transition: background 140ms ease;
+}
+
+.stat:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .stat-icon {
@@ -985,68 +996,102 @@ code {
   text-align: center;
 }
 
-/* Token explainer banner */
-.token-banner {
+/* Compact repair-token strip */
+.token-strip {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 11px;
   margin: 0 auto 20px;
   width: min(100%, 720px);
-  padding: 16px;
+  padding: 12px 14px;
   border-radius: 10px;
 }
 
-.token-banner.charged {
-  border-color: rgba(90, 162, 255, 0.4);
+.token-strip strong {
+  flex: 1 1 auto;
+  font-size: 15px;
+  letter-spacing: -0.01em;
 }
 
-.token-banner-icon {
+.token-strip-icon {
   display: grid;
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 12px;
+  border-radius: 9px;
   color: var(--gray);
   border: 1px solid var(--edge);
   background: rgba(255, 255, 255, 0.04);
 }
 
-.token-banner.charged .token-banner-icon {
+.token-strip.charged {
+  border-color: rgba(90, 162, 255, 0.4);
+}
+
+.token-strip.charged .token-strip-icon {
   color: var(--blue);
   border-color: rgba(90, 162, 255, 0.5);
   background: rgba(90, 162, 255, 0.14);
-  box-shadow: 0 0 26px rgba(90, 162, 255, 0.28);
+  box-shadow: 0 0 22px rgba(90, 162, 255, 0.26);
 }
 
-.token-banner-copy {
+.info-button {
   display: grid;
-  gap: 3px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--edge);
+  border-radius: 9px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease;
 }
 
-.token-banner-copy strong {
-  font-size: 16px;
+.info-button:hover {
+  color: var(--ink);
+  border-color: var(--edge-strong);
+}
+
+/* Sign out lives in the settings pop-up */
+.signout-button {
+  margin-top: 12px;
+  color: #ff8a8a;
+  border-color: rgba(255, 138, 138, 0.3);
+  background: rgba(255, 138, 138, 0.08);
+}
+
+/* Dismissable info pop-up */
+.info-window {
+  width: min(100%, 420px);
+  height: fit-content;
+  border-radius: 12px;
+  padding: 20px;
+  background: linear-gradient(160deg, rgba(24, 26, 30, 0.86), rgba(13, 14, 16, 0.92));
+  backdrop-filter: blur(22px) saturate(140%);
+}
+
+.info-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.info-heading h2 {
+  margin: 0;
+  font-size: 20px;
   letter-spacing: -0.01em;
 }
 
-.token-banner-copy p {
+.info-body {
   margin: 0;
   color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.45;
-}
-
-.token-spent {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  padding: 5px 9px;
-  border-radius: 8px;
-  border: 1px solid var(--edge);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .progress-grid {
@@ -1553,9 +1598,5 @@ code {
 
   .task-row {
     grid-template-columns: 44px 1fr 30px;
-  }
-
-  .token-banner {
-    flex-wrap: wrap;
   }
 }

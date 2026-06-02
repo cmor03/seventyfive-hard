@@ -1094,12 +1094,32 @@ export default function Home() {
                   </h1>
                 </div>
                 <button
-                  className={`status-star ${daily.status !== "gray" ? "lit" : ""}`}
+                  className={`status-star ${daily.status} ${
+                    daily.progressPhotoUrl ? "has-photo" : ""
+                  } ${daily.status !== "gray" ? "lit" : ""}`}
                   type="button"
-                  aria-label="What the stars mean"
-                  onClick={() => setInfo(infoTopics.stars)}
+                  aria-label={daily.progressPhotoUrl ? "Replace today's photo" : "Add today's photo"}
+                  onClick={() => choosePhotoForDate()}
+                  disabled={busy}
                 >
-                  <Star size={56} fill="currentColor" />
+                  {daily.progressPhotoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={daily.progressPhotoUrl}
+                      alt="Today progress"
+                      loading="eager"
+                      fetchPriority="high"
+                    />
+                  ) : (
+                    <Star className="status-star-main" size={48} fill="currentColor" />
+                  )}
+                  <span className="status-star-badge" aria-hidden="true">
+                    {daily.progressPhotoUrl ? (
+                      <Star size={16} fill="currentColor" />
+                    ) : (
+                      <Camera size={15} />
+                    )}
+                  </span>
                 </button>
               </div>
               <div className="hero-progress">
@@ -1118,31 +1138,31 @@ export default function Home() {
             <section className="stats-bar glass-panel" aria-label="Your stats">
               <button className="stat" type="button" onClick={() => setInfo(infoTopics.streak)}>
                 <span className="stat-icon streak">
-                  <Flame size={18} />
+                  <Flame size={30} />
+                  <strong className="stat-count">{streak}</strong>
                 </span>
-                <strong>{streak}</strong>
-                <span>Day streak</span>
+                <span className="stat-label">Day streak</span>
               </button>
               <button className="stat" type="button" onClick={() => setInfo(infoTopics.blue)}>
                 <span className="stat-icon blue">
-                  <Star size={18} fill="currentColor" />
+                  <Star size={30} fill="currentColor" />
+                  <strong className="stat-count">{starCounts.blue}</strong>
                 </span>
-                <strong>{starCounts.blue}</strong>
-                <span>Blue stars</span>
+                <span className="stat-label">Blue stars</span>
               </button>
               <button className="stat" type="button" onClick={() => setInfo(infoTopics.gold)}>
                 <span className="stat-icon gold">
-                  <Star size={18} fill="currentColor" />
+                  <Star size={30} fill="currentColor" />
+                  <strong className="stat-count">{starCounts.gold}</strong>
                 </span>
-                <strong>{starCounts.gold}</strong>
-                <span>Gold stars</span>
+                <span className="stat-label">Gold stars</span>
               </button>
               <button className="stat" type="button" onClick={() => setInfo(infoTopics.tokens)}>
                 <span className="stat-icon token">
-                  <Wand2 size={18} />
+                  <Wand2 size={30} />
+                  <strong className="stat-count">{tokens.available}</strong>
                 </span>
-                <strong>{tokens.available}</strong>
-                <span>Repair tokens</span>
+                <span className="stat-label">Repair tokens</span>
               </button>
             </section>
 
@@ -1165,42 +1185,9 @@ export default function Home() {
               ))}
             </section>
 
-            <section className="photo-panel glass-panel">
-              <div className="photo-copy">
-                <Camera size={21} />
-                <h2>Progress picture</h2>
-              </div>
-              {daily.progressPhotoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  className="today-photo"
-                  src={daily.progressPhotoUrl}
-                  alt="Today progress"
-                  loading="eager"
-                  fetchPriority="high"
-                />
-              ) : (
-                <button
-                  className="photo-placeholder"
-                  type="button"
-                  onClick={() => choosePhotoForDate()}
-                >
-                  <ImageIcon size={26} />
-                  <span>Add today’s photo</span>
-                </button>
-              )}
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => choosePhotoForDate()}
-                disabled={busy}
-              >
-                <Upload size={18} />
-                {busy ? "Uploading..." : daily.progressPhotoUrl ? "Replace photo" : "Upload photo"}
-              </button>
-            </section>
-
-            <p className="save-state">{saving ? "Saving..." : "Saved privately"}</p>
+            <p className="save-state">
+              {busy ? "Uploading..." : saving ? "Saving..." : "Saved privately"}
+            </p>
             {authMessage ? <p className="save-state">{authMessage}</p> : null}
           </section>
         ) : (

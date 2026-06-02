@@ -326,6 +326,8 @@ code {
   z-index: 1;
   width: min(100%, 980px);
   margin: 0 auto;
+  /* Clear the fixed bottom nav. */
+  padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
 }
 
 /* ---------- Top bar ---------- */
@@ -411,34 +413,6 @@ code {
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-}
-
-.token-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 42px;
-  padding: 0 12px;
-  border-radius: 11px;
-  border: 1px solid var(--edge);
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.04);
-  font-weight: 900;
-}
-
-.token-badge strong {
-  font-size: 16px;
-}
-
-.token-badge.charged {
-  border-color: rgba(90, 162, 255, 0.55);
-  color: var(--ink);
-  background: rgba(90, 162, 255, 0.14);
-  box-shadow: 0 0 0 1px rgba(90, 162, 255, 0.18), 0 10px 24px rgba(90, 162, 255, 0.16);
-}
-
-.token-badge.charged svg {
-  color: var(--blue);
 }
 
 .icon-button {
@@ -567,14 +541,19 @@ code {
 }
 
 /* ---------- Tabs ---------- */
+/* Persistent bottom nav — same pill, just pinned to the bottom. */
 .view-tabs {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 14px);
+  left: 50%;
+  z-index: 6;
   display: flex;
   align-items: center;
   width: fit-content;
   gap: 5px;
-  margin: 16px auto 20px;
   padding: 5px;
   border-radius: 13px;
+  transform: translateX(-50%);
 }
 
 .view-tabs button {
@@ -599,14 +578,12 @@ code {
 /* ---------- Today ---------- */
 .daily-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
-  gap: 14px;
+  gap: 12px;
+  margin-top: 14px;
 }
 
 .hero-status,
 .task-list,
-.photo-panel,
-.reminder-panel,
 .stats-bar {
   border-radius: 10px;
 }
@@ -615,11 +592,11 @@ code {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 22px;
-  min-height: 240px;
+  gap: 18px;
+  min-height: 200px;
   grid-column: 1 / -1;
   overflow: hidden;
-  padding: clamp(22px, 4vw, 36px);
+  padding: clamp(20px, 4vw, 32px);
   /* Cybertruck chamfered corner */
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 26px), calc(100% - 26px) 100%, 0 100%);
 }
@@ -661,12 +638,14 @@ code {
 }
 
 .status-star {
+  position: relative;
   display: grid;
   flex: 0 0 auto;
-  width: 96px;
-  height: 96px;
+  width: 104px;
+  height: 104px;
   place-items: center;
   padding: 0;
+  overflow: hidden;
   border-radius: 16px;
   color: var(--gray);
   border: 1px solid var(--edge);
@@ -675,17 +654,49 @@ code {
   transition: color 200ms ease, box-shadow 200ms ease;
 }
 
+.status-star img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Star/camera chip pinned to the corner of the tile. */
+.status-star-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 1;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--gray);
+  border: 1px solid var(--edge);
+  background: rgba(5, 6, 8, 0.74);
+}
+
 .status-star.lit {
   animation: star-pop 420ms ease;
 }
 
-.hero-status.gold .status-star {
+.hero-status.gold .status-star,
+.hero-status.gold .status-star-badge {
   color: var(--gold);
+}
+
+.hero-status.blue .status-star,
+.hero-status.blue .status-star-badge {
+  color: var(--blue);
+}
+
+.hero-status.gold .status-star {
   box-shadow: 0 0 0 1px rgba(244, 183, 64, 0.4), 0 0 40px rgba(244, 183, 64, 0.3);
 }
 
 .hero-status.blue .status-star {
-  color: var(--blue);
   box-shadow: 0 0 0 1px rgba(90, 162, 255, 0.45), 0 0 46px rgba(90, 162, 255, 0.36);
 }
 
@@ -758,14 +769,20 @@ code {
 }
 
 .stat-icon {
+  position: relative;
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 50px;
+  height: 50px;
   place-items: center;
-  margin-bottom: 3px;
-  border-radius: 10px;
+  margin-bottom: 5px;
+  border-radius: 12px;
   border: 1px solid var(--edge);
   background: rgba(255, 255, 255, 0.04);
+}
+
+/* Dimmed icon sits behind the bold count. */
+.stat-icon svg {
+  opacity: 0.28;
 }
 
 .stat-icon.streak {
@@ -781,13 +798,18 @@ code {
   color: var(--ink);
 }
 
-.stat strong {
-  font-size: 24px;
-  line-height: 1;
+.stat-count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 900;
   letter-spacing: -0.02em;
 }
 
-.stat > span:last-child {
+.stat-label {
   color: var(--faint);
   font-size: 11px;
   font-weight: 800;
@@ -886,68 +908,6 @@ code {
   box-shadow: 0 0 16px rgba(90, 162, 255, 0.5);
 }
 
-/* ---------- Photo / reminders ---------- */
-.photo-panel,
-.reminder-panel {
-  display: grid;
-  align-content: start;
-  gap: 14px;
-  padding: 16px;
-}
-
-.photo-copy,
-.reminder-copy {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.photo-copy > svg,
-.reminder-copy > svg {
-  color: var(--claude);
-  flex: 0 0 auto;
-}
-
-.photo-copy h2,
-.reminder-copy h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.photo-copy p,
-.reminder-copy p {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.today-photo,
-.photo-placeholder {
-  width: 100%;
-  aspect-ratio: 4 / 5;
-  border-radius: 14px;
-}
-
-.today-photo {
-  object-fit: cover;
-  border: 1px solid var(--edge);
-}
-
-.photo-placeholder {
-  display: grid;
-  place-items: center;
-  border: 1px dashed var(--edge-strong);
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.02);
-  cursor: pointer;
-  font-weight: 800;
-}
-
-.photo-placeholder span {
-  display: block;
-  margin-top: 8px;
-}
-
 .save-state {
   grid-column: 1 / -1;
   margin: 0;
@@ -957,28 +917,10 @@ code {
   text-align: center;
 }
 
-.reminder-instructions {
-  margin: 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--hairline);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.reminder-status {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  text-align: center;
-}
-
 /* ---------- Progress view ---------- */
 .progress-view {
-  padding-bottom: 40px;
+  margin-top: 14px;
+  padding-bottom: 8px;
 }
 
 .progress-heading {
@@ -1542,11 +1484,6 @@ code {
     font-size: 14px;
   }
 
-  .token-badge {
-    height: 38px;
-    padding: 0 9px;
-  }
-
   .top-actions {
     gap: 6px;
   }
@@ -1566,7 +1503,10 @@ code {
   }
 
   .view-tabs {
-    width: 100%;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    transform: none;
   }
 
   .view-tabs button {
@@ -1582,11 +1522,16 @@ code {
     padding: 12px 4px;
   }
 
-  .stat strong {
-    font-size: 20px;
+  .stat-icon {
+    width: 46px;
+    height: 46px;
   }
 
-  .stat > span:last-child {
+  .stat-count {
+    font-size: 18px;
+  }
+
+  .stat-label {
     font-size: 9.5px;
   }
 

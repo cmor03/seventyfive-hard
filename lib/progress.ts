@@ -10,9 +10,10 @@ export type DailyRecord = {
   leetcode30: boolean;
   status: StarStatus;
   /**
-   * Set when a day was retroactively completed by spending an earned
-   * blue-star repair token. A repaired day always reads as a blue star, but
-   * it never earns a token of its own (so the economy can't be farmed).
+   * Set when a day was retroactively checked off by spending an earned
+   * blue-star repair token. A repair only fills the five core habits (never
+   * LeetCode), so a repaired day tops out at a gold star and can never mint a
+   * new token of its own — the economy can't be farmed.
    */
   repaired?: boolean;
   updatedAt?: unknown;
@@ -76,12 +77,6 @@ export function dateKeyForDay(startDate: string, dayNumber: number) {
 }
 
 export function calculateStatus(record: DailyRecord): StarStatus {
-  // A repaired day is always a blue star, even without a photo, because it was
-  // earned by spending a real blue-star token elsewhere.
-  if (record.repaired) {
-    return "blue";
-  }
-
   const completedCore = coreTaskKeys.every((key) => record[key]);
   const hasPhoto = Boolean(record.progressPhotoUrl);
 

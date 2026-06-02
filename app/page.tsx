@@ -656,17 +656,25 @@ export default function Home() {
       setAuthMessage("You can only repair days that have already passed.");
       return;
     }
+    const existing = recordFromData(progress[dateKey] ?? emptyDailyRecord);
+    // A repair just fixes forgotten check-offs — the photo is the proof you
+    // actually showed up that day, so it has to exist first.
+    if (!existing.progressPhotoUrl) {
+      setAuthMessage("Add a photo from that day before you can repair it.");
+      return;
+    }
+    if (existing.status !== "gray") return;
     if (tokens.available <= 0) {
       setAuthMessage("No repair tokens yet. Earn a blue star to bank one.");
       return;
     }
-    const existing = recordFromData(progress[dateKey] ?? emptyDailyRecord);
-    if (existing.status === "blue") return;
 
     const activeDb = db;
     setBusy(true);
     setAuthMessage("");
     try {
+      // Fill the five core habits only — never LeetCode, so the day lands on a
+      // gold star and can't mint a fresh repair token.
       const repaired: DailyRecord = {
         ...existing,
         workout1: true,
@@ -674,16 +682,15 @@ export default function Home() {
         strictDiet: true,
         waterGallon: true,
         read10Pages: true,
-        leetcode30: true,
         repaired: true,
-        status: "blue",
         updatedAt: serverTimestamp(),
       };
+      repaired.status = calculateStatus(repaired);
       await setDoc(doc(activeDb, "users", user.uid, "daily", dateKey), repaired, {
         merge: true,
       });
       setProgress((items) => ({ ...items, [dateKey]: repaired }));
-      setAuthMessage("Day repaired with a blue-star token. Streak protected.");
+      setAuthMessage("Day repaired — gold star restored. Streak protected.");
     } catch (error) {
       setAuthMessage(readableError(error));
     } finally {
@@ -1268,8 +1275,12 @@ export default function Home() {
                 const { dateKey, day, item } = expandedProgress;
                 const hasPhoto = Boolean(item.progressPhotoUrl);
                 const isPast = dateKey < currentDateKey;
-                const canRepair = isPast && item.status !== "blue" && tokens.available > 0;
-                const lockedRepair = isPast && item.status !== "blue" && tokens.available <= 0;
+                // Only incomplete past days that already have a proof photo can
+                // be repaired; without a photo you must upload one first.
+                const incomplete = isPast && item.status === "gray";
+                const needsPhoto = incomplete && !hasPhoto;
+                const canRepair = incomplete && hasPhoto && tokens.available > 0;
+                const lockedRepair = incomplete && hasPhoto && tokens.available <= 0;
 
                 return (
                   <div className="expanded-photo-panel">
@@ -1346,7 +1357,12 @@ export default function Home() {
                     {item.repaired ? (
                       <div className="repair-banner repaired">
                         <Wand2 size={18} />
-                        <p>This day was restored with a blue-star repair token.</p>
+                        <p>This day was checked off with a blue-star repair token.</p>
+                      </div>
+                    ) : needsPhoto ? (
+                      <div className="repair-banner locked">
+                        <Camera size={18} />
+                        <p>Upload a photo from this day first, then you can repair it.</p>
                       </div>
                     ) : canRepair ? (
                       <button
@@ -1398,9 +1414,9 @@ export default function Home() {
                       {tokens.available} repair {tokens.available === 1 ? "token" : "tokens"}
                     </strong>
                     <p>
-                      Every blue star you earn banks one token. Open a past day and tap
-                      &ldquo;forgot to check something off&rdquo; to spend a token and restore it to a
-                      blue star.
+                      Every blue star you earn banks one token. Open a past day that has a photo and
+                      tap &ldquo;forgot to check something off&rdquo; to spend a token and check off
+                      the day for a gold star.
                     </p>
                   </div>
                   {tokens.spent > 0 ? (

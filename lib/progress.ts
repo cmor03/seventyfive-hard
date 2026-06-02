@@ -9,6 +9,12 @@ export type DailyRecord = {
   progressPhotoUrl: string;
   leetcode30: boolean;
   status: StarStatus;
+  /**
+   * Set when a day was retroactively completed by spending an earned
+   * blue-star repair token. A repaired day always reads as a blue star, but
+   * it never earns a token of its own (so the economy can't be farmed).
+   */
+  repaired?: boolean;
   updatedAt?: unknown;
 };
 
@@ -40,6 +46,7 @@ export const emptyDailyRecord: DailyRecord = {
   progressPhotoUrl: "",
   leetcode30: false,
   status: "gray",
+  repaired: false,
 };
 
 export function todayKey(date = new Date()) {
@@ -69,6 +76,12 @@ export function dateKeyForDay(startDate: string, dayNumber: number) {
 }
 
 export function calculateStatus(record: DailyRecord): StarStatus {
+  // A repaired day is always a blue star, even without a photo, because it was
+  // earned by spending a real blue-star token elsewhere.
+  if (record.repaired) {
+    return "blue";
+  }
+
   const completedCore = coreTaskKeys.every((key) => record[key]);
   const hasPhoto = Boolean(record.progressPhotoUrl);
 
@@ -81,4 +94,61 @@ export function calculateStatus(record: DailyRecord): StarStatus {
   }
 
   return "gray";
+}
+
+export type TokenStats = {
+  /** Blue stars earned the honest way (not via a repair). */
+  earned: number;
+  /** Repair tokens already spent fixing past days. */
+  spent: number;
+  /** Repair tokens currently available to spend. */
+  available: number;
+};
+
+export function tokenStats(progress: Record<string, DailyRecord>): TokenStats {
+  let earned = 0;
+  let spent = 0;
+
+  for (const record of Object.values(progress)) {
+    if (record.repaired) {
+      spent += 1;
+    } else if (record.status === "blue") {
+      earned += 1;
+    }
+  }
+
+  return { earned, spent, available: Math.max(earned - spent, 0) };
+}
+
+/** A day counts toward a streak once it reaches at least a gold star. */
+export function isDayComplete(record?: DailyRecord) {
+  return Boolean(record) && record!.status !== "gray";
+}
+
+/**
+ * Longest run of completed days ending on the most recent completed day,
+ * walking backward from the current day.
+ */
+export function currentStreak(
+  progress: Record<string, DailyRecord>,
+  startDate: string,
+  currentDay: number,
+) {
+  let streak = 0;
+  let started = false;
+
+  for (let day = currentDay; day >= 1; day -= 1) {
+    const record = progress[dateKeyForDay(startDate, day)];
+    if (isDayComplete(record)) {
+      streak += 1;
+      started = true;
+    } else if (started) {
+      break;
+    } else {
+      // Allow today to still be in progress without breaking yesterday's run.
+      if (day !== currentDay) break;
+    }
+  }
+
+  return streak;
 }

@@ -1,25 +1,32 @@
 "use client";
 
 import {
+  Award,
   Bell,
   BellOff,
+  BookOpen,
   CalendarDays,
   Camera,
   Check,
   Dumbbell,
   Droplets,
+  Flame,
   ImageIcon,
+  Lock,
   LogOut,
   Phone,
   Salad,
   Save,
   Settings,
   ShieldCheck,
-  Sparkles,
   Star,
+  Trophy,
   Upload,
   UserRound,
+  Wand2,
+  Wind,
   X,
+  Zap,
 } from "lucide-react";
 import {
   FormEvent,
@@ -53,10 +60,13 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { auth, db, isFirebaseConfigured, storage } from "@/lib/firebase";
 import {
   calculateStatus,
+  currentStreak,
   dateKeyForDay,
   dayNumberFromStart,
   emptyDailyRecord,
+  isDayComplete,
   todayKey,
+  tokenStats,
   type DailyRecord,
   type StarStatus,
   type UserProfile,
@@ -92,7 +102,7 @@ const tasks: Task[] = [
     key: "outsideWorkout",
     title: "Outside workout",
     detail: "Fresh air required",
-    icon: <Sparkles size={20} />,
+    icon: <Wind size={20} />,
   },
   {
     key: "strictDiet",
@@ -110,7 +120,7 @@ const tasks: Task[] = [
     key: "read10Pages",
     title: "Read 10 pages",
     detail: "Physical or focused reading",
-    icon: <CalendarDays size={20} />,
+    icon: <BookOpen size={20} />,
   },
   {
     key: "leetcode30",
@@ -249,12 +259,40 @@ export default function Home() {
       visibleDays.find(
         (visibleDay) => dateKeyForDay(effectiveStartDate, visibleDay) === expandedProgressDate,
       ) ?? currentDay;
-    const item = progress[expandedProgressDate];
-
-    if (!item?.progressPhotoUrl) return null;
+    const item = recordFromData(progress[expandedProgressDate] ?? emptyDailyRecord);
 
     return { dateKey: expandedProgressDate, day, item };
   }, [currentDay, effectiveStartDate, expandedProgressDate, progress, visibleDays]);
+
+  const tokens = useMemo(() => tokenStats(progress), [progress]);
+  const streak = useMemo(
+    () => currentStreak(progress, effectiveStartDate, currentDay),
+    [progress, effectiveStartDate, currentDay],
+  );
+  const starCounts = useMemo(() => {
+    let blue = 0;
+    let gold = 0;
+    let complete = 0;
+    for (const day of visibleDays) {
+      const record = progress[dateKeyForDay(effectiveStartDate, day)];
+      if (record?.status === "blue") blue += 1;
+      else if (record?.status === "gold") gold += 1;
+      if (isDayComplete(record)) complete += 1;
+    }
+    return { blue, gold, complete };
+  }, [progress, effectiveStartDate, visibleDays]);
+  const completionPct = Math.round((currentDay / 75) * 100);
+  const completedToday = tasks.filter((task) => daily[task.key]).length;
+  // Light-hearted "rank" progression to make the grind feel like a journey.
+  const rank = useMemo(() => {
+    if (currentDay >= 75) return { name: "Legend", tier: 6 };
+    if (currentDay >= 60) return { name: "Unbreakable", tier: 5 };
+    if (currentDay >= 45) return { name: "Relentless", tier: 4 };
+    if (currentDay >= 30) return { name: "Forged", tier: 3 };
+    if (currentDay >= 15) return { name: "Locked In", tier: 2 };
+    if (currentDay >= 5) return { name: "Igniting", tier: 1 };
+    return { name: "Recruit", tier: 0 };
+  }, [currentDay]);
 
   const persistDaily = useCallback(
     async (nextRecord: DailyRecord) => {
@@ -611,6 +649,48 @@ export default function Home() {
     }
   }
 
+  async function repairDay(dateKey: string) {
+    if (!user || !db) return;
+    // Repair is only for previous days — today is yours to actually earn.
+    if (dateKey >= currentDateKey) {
+      setAuthMessage("You can only repair days that have already passed.");
+      return;
+    }
+    if (tokens.available <= 0) {
+      setAuthMessage("No repair tokens yet. Earn a blue star to bank one.");
+      return;
+    }
+    const existing = recordFromData(progress[dateKey] ?? emptyDailyRecord);
+    if (existing.status === "blue") return;
+
+    const activeDb = db;
+    setBusy(true);
+    setAuthMessage("");
+    try {
+      const repaired: DailyRecord = {
+        ...existing,
+        workout1: true,
+        outsideWorkout: true,
+        strictDiet: true,
+        waterGallon: true,
+        read10Pages: true,
+        leetcode30: true,
+        repaired: true,
+        status: "blue",
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(doc(activeDb, "users", user.uid, "daily", dateKey), repaired, {
+        merge: true,
+      });
+      setProgress((items) => ({ ...items, [dateKey]: repaired }));
+      setAuthMessage("Day repaired with a blue-star token. Streak protected.");
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function uploadPhoto(file?: File, targetDateKey = currentDateKey) {
     if (!file || !user || !db || !storage) return;
     if (!isAcceptedImage(file)) {
@@ -872,13 +952,32 @@ export default function Home() {
     <Shell>
       <main className="app-frame">
         <header className="top-bar glass-panel">
-          <p className="greeting">Hello, {displayName}</p>
+          <div className="brand-mini">
+            <div className="app-icon">
+              <Star size={20} fill="currentColor" />
+            </div>
+            <div className="brand-mini-copy">
+              <p className="greeting">{displayName}</p>
+              <span className="rank-chip" data-tier={rank.tier}>
+                <Trophy size={12} />
+                {rank.name}
+              </span>
+            </div>
+          </div>
           <div className="day-display">
             <span>Day</span>
             <strong>{currentDay}</strong>
-            <span>of 75</span>
+            <span>/ 75</span>
           </div>
           <div className="top-actions">
+            <div
+              className={`token-badge ${tokens.available > 0 ? "charged" : ""}`}
+              title="Blue-star repair tokens"
+              aria-label={`${tokens.available} repair tokens available`}
+            >
+              <Wand2 size={15} />
+              <strong>{tokens.available}</strong>
+            </div>
             <button
               className="icon-button"
               aria-label="Open settings"
@@ -1002,14 +1101,67 @@ export default function Home() {
         {view === "today" ? (
           <section className="daily-layout">
             <div className={`hero-status glass-panel ${daily.status}`}>
-              <div>
-                <p>{statusLabel(daily.status)}</p>
-                <h1>{daily.status === "blue" ? "Blue looks good on you." : "Stack the day."}</h1>
+              <div className="hero-top">
+                <div>
+                  <p>{statusLabel(daily.status)}</p>
+                  <h1>
+                    {daily.status === "blue"
+                      ? "Blue looks good on you."
+                      : daily.status === "gold"
+                      ? "Gold locked. Push for blue."
+                      : "Stack the day."}
+                  </h1>
+                </div>
+                <div
+                  className={`status-star ${daily.status !== "gray" ? "lit" : ""}`}
+                  aria-hidden="true"
+                >
+                  <Star size={56} fill="currentColor" />
+                </div>
               </div>
-              <div className="status-star" aria-hidden="true">
-                <Star size={58} fill="currentColor" />
+              <div className="hero-progress">
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${completionPct}%` }} />
+                </div>
+                <div className="hero-progress-meta">
+                  <span>
+                    <Zap size={13} /> {completedToday}/6 tasks today
+                  </span>
+                  <span>{completionPct}% of 75</span>
+                </div>
               </div>
             </div>
+
+            <section className="stats-bar glass-panel" aria-label="Your stats">
+              <div className="stat">
+                <span className="stat-icon streak">
+                  <Flame size={18} />
+                </span>
+                <strong>{streak}</strong>
+                <span>Day streak</span>
+              </div>
+              <div className="stat">
+                <span className="stat-icon blue">
+                  <Star size={18} fill="currentColor" />
+                </span>
+                <strong>{starCounts.blue}</strong>
+                <span>Blue stars</span>
+              </div>
+              <div className="stat">
+                <span className="stat-icon gold">
+                  <Star size={18} fill="currentColor" />
+                </span>
+                <strong>{starCounts.gold}</strong>
+                <span>Gold stars</span>
+              </div>
+              <div className="stat">
+                <span className="stat-icon token">
+                  <Wand2 size={18} />
+                </span>
+                <strong>{tokens.available}</strong>
+                <span>Repair tokens</span>
+              </div>
+            </section>
 
             <section className="task-list glass-panel" aria-label="Daily checklist">
               {tasks.map((task) => (
@@ -1111,89 +1263,198 @@ export default function Home() {
           </section>
         ) : (
           <section className="progress-view">
-            <div className="progress-heading">
-              <div>
-                <p>Progress</p>
-                <h1>Revel a little.</h1>
-              </div>
-            </div>
             {expandedProgress ? (
-              <div className="expanded-photo-panel">
-                <button
-                  className={`expanded-photo-view ${expandedProgress.item.status}`}
-                  type="button"
-                  onClick={() => setExpandedProgressDate(null)}
-                  aria-label={`Collapse day ${expandedProgress.day} progress photo`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={expandedProgress.item.progressPhotoUrl}
-                    alt={`Day ${expandedProgress.day} progress expanded`}
-                    loading="eager"
-                    fetchPriority="high"
-                  />
-                  <span className="expanded-photo-meta">
-                    <span>Day {expandedProgress.day}</span>
-                    <Star size={32} fill="currentColor" />
-                  </span>
-                </button>
-                <button
-                  className="secondary-button expanded-upload-button"
-                  type="button"
-                  onClick={() => choosePhotoForDate(expandedProgress.dateKey)}
-                  disabled={busy}
-                >
-                  <Upload size={18} />
-                  {busy ? "Uploading..." : "Replace photo"}
-                </button>
-              </div>
-            ) : (
-              <div className="progress-grid">
-                {visibleDaysNewestFirst.map((day) => {
-                  const dateKey = dateKeyForDay(effectiveStartDate, day);
-                  const item = progress[dateKey] || emptyDailyRecord;
-                  const hasPhoto = Boolean(item.progressPhotoUrl);
+              (() => {
+                const { dateKey, day, item } = expandedProgress;
+                const hasPhoto = Boolean(item.progressPhotoUrl);
+                const isPast = dateKey < currentDateKey;
+                const canRepair = isPast && item.status !== "blue" && tokens.available > 0;
+                const lockedRepair = isPast && item.status !== "blue" && tokens.available <= 0;
 
-                  return (
+                return (
+                  <div className="expanded-photo-panel">
+                    <div className="expanded-heading">
+                      <button
+                        className="text-button back-button"
+                        type="button"
+                        onClick={() => setExpandedProgressDate(null)}
+                      >
+                        ← All days
+                      </button>
+                      <span className={`status-pill ${item.status}`}>
+                        <Star size={13} fill="currentColor" />
+                        {statusLabel(item.status)}
+                      </span>
+                    </div>
+
                     <button
-                      className={`progress-tile ${item.status} ${hasPhoto ? "has-photo" : "missing-photo"}`}
-                      key={dateKey}
+                      className={`expanded-photo-view ${item.status}`}
                       type="button"
-                      onClick={() => {
-                        if (hasPhoto) {
-                          setExpandedProgressDate(dateKey);
-                        } else {
-                          choosePhotoForDate(dateKey);
-                        }
-                      }}
-                      aria-label={
-                        hasPhoto
-                          ? `Expand day ${day} progress photo`
-                          : `Upload day ${day} progress photo`
-                      }
+                      onClick={() => hasPhoto && setExpandedProgressDate(null)}
+                      aria-label={`Day ${day} progress`}
                     >
                       {hasPhoto ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={item.progressPhotoUrl}
-                          alt={`Day ${day} progress`}
+                          alt={`Day ${day} progress expanded`}
                           loading="eager"
                           fetchPriority="high"
                         />
                       ) : (
-                        <div className="tile-placeholder">
-                          <ImageIcon size={22} />
+                        <div className="expanded-photo-empty">
+                          <ImageIcon size={30} />
+                          <span>No progress photo yet</span>
                         </div>
                       )}
-                      <div className="tile-scrim" />
-                      <div className="tile-meta">
+                      <span className="expanded-photo-meta">
                         <span>Day {day}</span>
-                        <Star size={24} fill="currentColor" />
-                      </div>
+                        {item.repaired ? (
+                          <span className="repaired-flag">
+                            <Wand2 size={16} /> Repaired
+                          </span>
+                        ) : (
+                          <Star size={30} fill="currentColor" />
+                        )}
+                      </span>
                     </button>
-                  );
-                })}
-              </div>
+
+                    <div className="day-checklist glass-panel">
+                      {tasks.map((task) => (
+                        <div
+                          className={`checklist-row ${item[task.key] ? "done" : ""}`}
+                          key={task.key}
+                        >
+                          <span className="checklist-icon">{task.icon}</span>
+                          <span className="checklist-title">{task.title}</span>
+                          <span className="checklist-mark">
+                            {item[task.key] ? <Check size={15} /> : <X size={14} />}
+                          </span>
+                        </div>
+                      ))}
+                      <div className={`checklist-row ${hasPhoto ? "done" : ""}`}>
+                        <span className="checklist-icon">
+                          <Camera size={20} />
+                        </span>
+                        <span className="checklist-title">Progress photo</span>
+                        <span className="checklist-mark">
+                          {hasPhoto ? <Check size={15} /> : <X size={14} />}
+                        </span>
+                      </div>
+                    </div>
+
+                    {item.repaired ? (
+                      <div className="repair-banner repaired">
+                        <Wand2 size={18} />
+                        <p>This day was restored with a blue-star repair token.</p>
+                      </div>
+                    ) : canRepair ? (
+                      <button
+                        className="repair-button"
+                        type="button"
+                        onClick={() => repairDay(dateKey)}
+                        disabled={busy}
+                      >
+                        <Wand2 size={18} />
+                        {busy ? "Repairing..." : "Forgot to check something off"}
+                        <span className="repair-cost">
+                          <Star size={12} fill="currentColor" /> 1 token
+                        </span>
+                      </button>
+                    ) : lockedRepair ? (
+                      <div className="repair-banner locked">
+                        <Lock size={18} />
+                        <p>Earn a blue star to bank a repair token, then fix this day.</p>
+                      </div>
+                    ) : null}
+
+                    <button
+                      className="secondary-button expanded-upload-button"
+                      type="button"
+                      onClick={() => choosePhotoForDate(dateKey)}
+                      disabled={busy}
+                    >
+                      <Upload size={18} />
+                      {busy ? "Uploading..." : hasPhoto ? "Replace photo" : "Add photo"}
+                    </button>
+                  </div>
+                );
+              })()
+            ) : (
+              <>
+                <div className="progress-heading">
+                  <div>
+                    <p>Progress</p>
+                    <h1>Revel a little.</h1>
+                  </div>
+                </div>
+
+                <div className={`token-banner glass-panel ${tokens.available > 0 ? "charged" : ""}`}>
+                  <span className="token-banner-icon">
+                    <Wand2 size={20} />
+                  </span>
+                  <div className="token-banner-copy">
+                    <strong>
+                      {tokens.available} repair {tokens.available === 1 ? "token" : "tokens"}
+                    </strong>
+                    <p>
+                      Every blue star you earn banks one token. Open a past day and tap
+                      &ldquo;forgot to check something off&rdquo; to spend a token and restore it to a
+                      blue star.
+                    </p>
+                  </div>
+                  {tokens.spent > 0 ? (
+                    <span className="token-spent" title="Tokens spent">
+                      <Award size={14} /> {tokens.spent} used
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="progress-grid">
+                  {visibleDaysNewestFirst.map((day) => {
+                    const dateKey = dateKeyForDay(effectiveStartDate, day);
+                    const item = progress[dateKey] || emptyDailyRecord;
+                    const hasPhoto = Boolean(item.progressPhotoUrl);
+                    const isToday = dateKey === currentDateKey;
+
+                    return (
+                      <button
+                        className={`progress-tile ${item.status} ${
+                          hasPhoto ? "has-photo" : "missing-photo"
+                        } ${item.repaired ? "repaired" : ""} ${isToday ? "is-today" : ""}`}
+                        key={dateKey}
+                        type="button"
+                        onClick={() => setExpandedProgressDate(dateKey)}
+                        aria-label={`Open day ${day}`}
+                      >
+                        {hasPhoto ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.progressPhotoUrl}
+                            alt={`Day ${day} progress`}
+                            loading="eager"
+                            fetchPriority="high"
+                          />
+                        ) : (
+                          <div className="tile-placeholder">
+                            <ImageIcon size={22} />
+                          </div>
+                        )}
+                        <div className="tile-scrim" />
+                        {item.repaired ? (
+                          <span className="tile-repaired" aria-hidden="true">
+                            <Wand2 size={13} />
+                          </span>
+                        ) : null}
+                        <div className="tile-meta">
+                          <span>Day {day}</span>
+                          <Star size={22} fill="currentColor" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </section>
         )}

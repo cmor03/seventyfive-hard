@@ -80,21 +80,21 @@ button {
 
 .ambient-one {
   background-image:
-    radial-gradient(1.6px 1.6px at 40px 60px, rgba(255, 255, 255, 0.85), transparent 100%),
-    radial-gradient(1.4px 1.4px at 200px 150px, rgba(255, 255, 255, 0.7), transparent 100%),
-    radial-gradient(1.8px 1.8px at 320px 40px, rgba(217, 119, 87, 0.85), transparent 100%),
-    radial-gradient(1.4px 1.4px at 120px 300px, rgba(255, 255, 255, 0.7), transparent 100%),
-    radial-gradient(1.6px 1.6px at 360px 260px, rgba(255, 255, 255, 0.8), transparent 100%);
+    radial-gradient(1.6px 1.6px at 40px 60px, rgba(255, 255, 255, 0.9), transparent 100%),
+    radial-gradient(1.4px 1.4px at 200px 150px, rgba(255, 255, 255, 0.75), transparent 100%),
+    radial-gradient(1.8px 1.8px at 320px 40px, rgba(255, 255, 255, 0.95), transparent 100%),
+    radial-gradient(1.4px 1.4px at 120px 300px, rgba(255, 255, 255, 0.75), transparent 100%),
+    radial-gradient(1.6px 1.6px at 360px 260px, rgba(255, 255, 255, 0.85), transparent 100%);
   background-size: 420px 420px;
   animation: twinkle 7s ease-in-out infinite;
 }
 
 .ambient-two {
   background-image:
-    radial-gradient(1px 1px at 80px 90px, rgba(255, 255, 255, 0.55), transparent 100%),
-    radial-gradient(1px 1px at 220px 40px, rgba(255, 255, 255, 0.5), transparent 100%),
-    radial-gradient(1px 1px at 30px 220px, rgba(255, 255, 255, 0.45), transparent 100%),
-    radial-gradient(1px 1px at 260px 200px, rgba(90, 162, 255, 0.6), transparent 100%),
+    radial-gradient(1px 1px at 80px 90px, rgba(255, 255, 255, 0.6), transparent 100%),
+    radial-gradient(1px 1px at 220px 40px, rgba(255, 255, 255, 0.55), transparent 100%),
+    radial-gradient(1px 1px at 30px 220px, rgba(255, 255, 255, 0.5), transparent 100%),
+    radial-gradient(1px 1px at 260px 200px, rgba(255, 255, 255, 0.55), transparent 100%),
     radial-gradient(1px 1px at 160px 150px, rgba(255, 255, 255, 0.5), transparent 100%);
   background-size: 300px 300px;
   background-position: 60px 30px;

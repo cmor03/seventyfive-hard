@@ -1108,7 +1108,7 @@ export default function Home() {
                       src={daily.progressPhotoUrl}
                       alt="Today progress"
                       loading="eager"
-                      fetchPriority="high"
+                      decoding="async"
                     />
                   ) : (
                     <Star className="status-star-main" size={48} fill="currentColor" />
@@ -1232,7 +1232,7 @@ export default function Home() {
                           src={item.progressPhotoUrl}
                           alt={`Day ${day} progress expanded`}
                           loading="eager"
-                          fetchPriority="high"
+                          decoding="async"
                         />
                       ) : (
                         <div className="expanded-photo-empty">
@@ -1366,8 +1366,8 @@ export default function Home() {
                           <img
                             src={item.progressPhotoUrl}
                             alt={`Day ${day} progress`}
-                            loading="eager"
-                            fetchPriority="high"
+                            loading="lazy"
+                            decoding="async"
                           />
                         ) : (
                           <div className="tile-placeholder">

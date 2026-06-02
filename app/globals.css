@@ -1055,6 +1055,9 @@ code {
   cursor: pointer;
   padding: 0;
   text-align: left;
+  /* Skip rendering offscreen tiles so the gallery mounts instantly. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
   transition:
     transform 180ms ease,
     box-shadow 180ms ease,

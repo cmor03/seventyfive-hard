@@ -34,6 +34,7 @@ import {
   useRef,
   useState,
 } from "react";
+import Image from "next/image";
 import {
   browserLocalPersistence,
   onAuthStateChanged,
@@ -429,16 +430,6 @@ export default function Home() {
       cancelled = true;
     };
   }, [profile, user]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    Object.values(progress).forEach((record) => {
-      if (record.progressPhotoUrl) {
-        const img = new window.Image();
-        img.src = record.progressPhotoUrl;
-      }
-    });
-  }, [progress]);
 
   useEffect(() => {
     if (!user || !db || !profile) return;
@@ -1103,12 +1094,13 @@ export default function Home() {
                   disabled={busy}
                 >
                   {daily.progressPhotoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <Image
                       src={daily.progressPhotoUrl}
                       alt="Today progress"
-                      loading="eager"
-                      decoding="async"
+                      fill
+                      sizes="120px"
+                      style={{ objectFit: "cover" }}
+                      priority
                     />
                   ) : (
                     <Star className="status-star-main" size={48} fill="currentColor" />
@@ -1362,12 +1354,12 @@ export default function Home() {
                         aria-label={`Open day ${day}`}
                       >
                         {hasPhoto ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
+                          <Image
                             src={item.progressPhotoUrl}
                             alt={`Day ${day} progress`}
-                            loading="lazy"
-                            decoding="async"
+                            fill
+                            sizes="(max-width: 760px) 33vw, 240px"
+                            style={{ objectFit: "cover" }}
                           />
                         ) : (
                           <div className="tile-placeholder">

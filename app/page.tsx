@@ -1,28 +1,30 @@
 "use client";
 
 import {
+  Archive,
   BookOpen,
   CalendarDays,
   Camera,
   Check,
-  Dumbbell,
+  ChevronRight,
+  Code,
   Droplets,
+  Dumbbell,
+  Flag,
   Flame,
   ImageIcon,
-  Info,
-  Lock,
   LogOut,
   Phone,
+  Plane,
+  Plus,
   Salad,
   Save,
   Settings,
   ShieldCheck,
-  Star,
+  Sparkles,
+  Target,
   Trophy,
-  Upload,
   UserRound,
-  Wand2,
-  Wind,
   X,
   Zap,
 } from "lucide-react";
@@ -53,107 +55,109 @@ import {
   getDocs,
   serverTimestamp,
   setDoc,
-  type DocumentData,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { auth, db, isFirebaseConfigured, storage } from "@/lib/firebase";
 import {
-  calculateStatus,
-  currentStreak,
-  dateKeyForDay,
-  dayNumberFromStart,
+  activeEpoch,
+  addDays,
+  archivedEpochs,
+  dailyToFirestore,
+  dateInEpoch,
+  dayNumberInEpoch,
+  dayState,
+  defaultPhase,
   emptyDailyRecord,
+  enumerateDateKeys,
+  epochRangeEnd,
+  epochStats,
+  floorKeys,
+  hardBlockActive,
+  hardBlockRemaining,
   isDayComplete,
+  leetcodeEntries,
+  leetcodePatterns,
+  recordFromData,
+  requiredFloorKeys,
   todayKey,
-  tokenStats,
+  weekStartKey,
   type DailyRecord,
-  type StarStatus,
+  type Epoch,
+  type FloorKey,
+  type HardBlock,
+  type LeetcodeLog,
+  type Phase,
   type UserProfile,
 } from "@/lib/progress";
 import { browserTimezone } from "@/lib/messaging";
 
-type ViewMode = "today" | "progress";
+type ViewMode = "today" | "history" | "archive";
 const recaptchaContainerId = "phone-recaptcha-container";
-const appVersion = "0.1.0";
+const appVersion = "0.2.0";
 
 type InfoTopic = { title: string; body: string };
 
 const infoTopics = {
-  stars: {
-    title: "How stars work",
-    body: "Gray means the day is still in progress. Earn a gold star by finishing the five core habits and posting a progress photo. Earn a blue star by also doing 30 minutes of LeetCode. Every blue star banks one repair token.",
-  },
   streak: {
-    title: "Day streak",
-    body: "The number of days in a row you've earned at least a gold star. Today still counts as part of the streak until the day ends.",
+    title: "Your streak",
+    body: "The number of days you've completed in the current streak. A missed day is recorded but never resets the count to zero — you just pick up where you left off. Only you can end a streak.",
   },
-  blue: {
-    title: "Blue stars",
-    body: "Days where you finished everything, including 30 minutes of LeetCode. Each blue star banks one repair token you can spend later.",
+  disruption: {
+    title: "Disruption mode",
+    body: "For travel or chaotic days. It swaps the full floor for a stripped version: one bout of movement, one LeetCode problem, 10 pages, and holding the lines. A completed disruption day is a fully valid day and advances your streak.",
   },
-  gold: {
-    title: "Gold stars",
-    body: "Days where you finished the five core habits and posted a progress photo, but skipped LeetCode.",
-  },
-  tokens: {
-    title: "Repair tokens",
-    body: "You earn one token for every blue star. Spend a token on a past day that already has a photo but that you forgot to fully check off — it fills the five core habits for a gold star. Repaired days never earn new tokens, so the system can't be farmed.",
+  floor: {
+    title: "The daily floor",
+    body: "A short binary checklist designed to be completable even on your worst day. Check every required item and the day is done. The optional progress photo is encouraged but never required.",
   },
 } satisfies Record<string, InfoTopic>;
 
-type Task = {
-  key: keyof Omit<DailyRecord, "progressPhotoUrl" | "status" | "updatedAt" | "repaired">;
+type FloorItem = {
+  key: FloorKey;
   title: string;
+  hint: string;
   icon: React.ReactNode;
-  special?: boolean;
 };
 
-const tasks: Task[] = [
-  {
-    key: "workout1",
-    title: "Workout",
-    icon: <Dumbbell size={20} />,
-  },
-  {
-    key: "outsideWorkout",
-    title: "Outside workout",
-    icon: <Wind size={20} />,
-  },
-  {
-    key: "strictDiet",
-    title: "Strict diet",
-    icon: <Salad size={20} />,
-  },
-  {
-    key: "waterGallon",
-    title: "One gallon of water",
-    icon: <Droplets size={20} />,
-  },
-  {
-    key: "read10Pages",
-    title: "Read 10 pages",
-    icon: <BookOpen size={20} />,
-  },
-  {
-    key: "leetcode30",
-    title: "LeetCode 30 minutes",
-    icon: <Star size={20} />,
-    special: true,
-  },
-];
-
-function recordFromData(data?: DocumentData): DailyRecord {
-  return {
-    ...emptyDailyRecord,
-    ...data,
-    status: calculateStatus({ ...emptyDailyRecord, ...data }),
-  };
-}
-
-function statusLabel(status: StarStatus) {
-  if (status === "blue") return "Blue star day";
-  if (status === "gold") return "Gold star day";
-  return "Still in progress";
+function floorItems(phase: Phase): FloorItem[] {
+  return [
+    {
+      key: "movement",
+      title: "Movement",
+      hint: "Train, or a 30–45 min outdoor walk / zone 2 / mobility",
+      icon: <Dumbbell size={20} />,
+    },
+    {
+      key: "leetcode",
+      title: "LeetCode",
+      hint: "At least one problem",
+      icon: <Code size={20} />,
+    },
+    {
+      key: "read",
+      title: "Read 10 pages",
+      hint: "Any book",
+      icon: <BookOpen size={20} />,
+    },
+    {
+      key: "nutrition",
+      title: "Nutrition",
+      hint: `${phase.label}: ${phase.proteinTarget}g protein · ${phase.calorieTarget} kcal`,
+      icon: <Salad size={20} />,
+    },
+    {
+      key: "hydration",
+      title: "Hydration",
+      hint: "Hit your water target",
+      icon: <Droplets size={20} />,
+    },
+    {
+      key: "holdLines",
+      title: "Hold the lines",
+      hint: "Stay off the feeds, no slip-ups",
+      icon: <ShieldCheck size={20} />,
+    },
+  ];
 }
 
 function normalizePhoneNumber(value: string) {
@@ -213,6 +217,19 @@ function displayNameLabel(name: string) {
   return name.trim() || "there";
 }
 
+function formatRange(start: string, end: string) {
+  const fmt = (key: string) =>
+    new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(
+      new Date(`${key}T00:00:00`),
+    );
+  return `${fmt(start)} – ${fmt(end)}`;
+}
+
+function newEpochId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `epoch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -225,13 +242,23 @@ export default function Home() {
   const [startDate, setStartDate] = useState(todayKey());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsName, setSettingsName] = useState("");
-  const [settingsStartDate, setSettingsStartDate] = useState(todayKey());
   const [settingsMessage, setSettingsMessage] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [phaseDraft, setPhaseDraft] = useState<Phase>(defaultPhase);
+  const [hardBlockDraft, setHardBlockDraft] = useState<HardBlock>({
+    active: false,
+    days: 14,
+    startDate: todayKey(),
+  });
   const [daily, setDaily] = useState<DailyRecord>(emptyDailyRecord);
   const [progress, setProgress] = useState<Record<string, DailyRecord>>({});
+  const [progressLoaded, setProgressLoaded] = useState(false);
+  const [epochs, setEpochs] = useState<Epoch[]>([]);
+  const [epochsLoaded, setEpochsLoaded] = useState(false);
+  const [epochReloadKey, setEpochReloadKey] = useState(0);
   const [view, setView] = useState<ViewMode>("today");
-  const [expandedProgressDate, setExpandedProgressDate] = useState<string | null>(null);
+  const [browseEpochId, setBrowseEpochId] = useState<string | null>(null);
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [profileStatus, setProfileStatus] = useState<
@@ -239,84 +266,131 @@ export default function Home() {
   >("loading");
   const [reloadKey, setReloadKey] = useState(0);
   const [info, setInfo] = useState<InfoTopic | null>(null);
+
+  // Migration / new-streak flow.
+  const [needsMigration, setNeedsMigration] = useState(false);
+  const [migrationEnd, setMigrationEnd] = useState(todayKey());
+  const [migrationLabel, setMigrationLabel] = useState("Original 75 Hard");
+  const [newStreakLabel, setNewStreakLabel] = useState("");
+  const [newStreakStart, setNewStreakStart] = useState(todayKey());
+
+  // Weekly review. Reviews are keyed by the Monday of the week they cover and
+  // belong to whichever epoch contains that date, so archived streaks keep their
+  // recaps. The recap surfaces as a Sunday/Monday pop-up, not an inline panel.
+  const [reviews, setReviews] = useState<Record<string, { note: string }>>({});
+  const [reviewsLoaded, setReviewsLoaded] = useState(false);
+  const [recapOpen, setRecapOpen] = useState(false);
+  const [recapNote, setRecapNote] = useState("");
+  const recapPromptedRef = useRef(false);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const photoUploadDateKeyRef = useRef<string | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+  const bootstrapRef = useRef(false);
 
   const currentDateKey = todayKey();
   const displayName = displayNameLabel(profile?.name || user?.displayName || profileName);
+  const phase = profile?.phase ?? defaultPhase;
+
   const earliestDataDate = useMemo(() => {
     const keys = Object.keys(progress);
     if (keys.length === 0) return null;
     return keys.reduce((earliest, key) => (key < earliest ? key : earliest));
   }, [progress]);
-  const effectiveStartDate = useMemo(() => {
-    if (!profile) return todayKey();
-    return earliestDataDate ?? profile.startDate;
-  }, [earliestDataDate, profile]);
-  const currentDay = dayNumberFromStart(effectiveStartDate);
-  const visibleDays = useMemo(
-    () => Array.from({ length: currentDay }, (_, index) => index + 1),
-    [currentDay],
+  const latestDataDate = useMemo(() => {
+    const keys = Object.keys(progress);
+    if (keys.length === 0) return null;
+    return keys.reduce((latest, key) => (key > latest ? key : latest));
+  }, [progress]);
+
+  const active = useMemo(() => activeEpoch(epochs), [epochs]);
+  const archived = useMemo(() => archivedEpochs(epochs), [epochs]);
+  const browseEpoch = useMemo(
+    () => (browseEpochId ? epochs.find((epoch) => epoch.id === browseEpochId) ?? null : null),
+    [browseEpochId, epochs],
   );
-  const visibleDaysNewestFirst = useMemo(() => [...visibleDays].reverse(), [visibleDays]);
-  const expandedProgress = useMemo(() => {
-    if (!expandedProgressDate) return null;
-    const day =
-      visibleDays.find(
-        (visibleDay) => dateKeyForDay(effectiveStartDate, visibleDay) === expandedProgressDate,
-      ) ?? currentDay;
-    const item = recordFromData(progress[expandedProgressDate] ?? emptyDailyRecord);
+  const viewedEpoch = browseEpoch ?? active;
+  const isBrowsingArchive = Boolean(browseEpoch);
 
-    return { dateKey: expandedProgressDate, day, item };
-  }, [currentDay, effectiveStartDate, expandedProgressDate, progress, visibleDays]);
-
-  const tokens = useMemo(() => tokenStats(progress), [progress]);
-  const streak = useMemo(
-    () => currentStreak(progress, effectiveStartDate, currentDay),
-    [progress, effectiveStartDate, currentDay],
+  const stats = useMemo(
+    () => (active ? epochStats(progress, active, currentDateKey) : null),
+    [active, progress, currentDateKey],
   );
-  const starCounts = useMemo(() => {
-    let blue = 0;
-    let gold = 0;
-    let complete = 0;
-    for (const day of visibleDays) {
-      const record = progress[dateKeyForDay(effectiveStartDate, day)];
-      if (record?.status === "blue") blue += 1;
-      else if (record?.status === "gold") gold += 1;
-      if (isDayComplete(record)) complete += 1;
-    }
-    return { blue, gold, complete };
-  }, [progress, effectiveStartDate, visibleDays]);
-  const completionPct = Math.round((currentDay / 75) * 100);
-  const completedToday = tasks.filter((task) => daily[task.key]).length;
-  // Light-hearted "rank" progression to make the grind feel like a journey.
-  const rank = useMemo(() => {
-    if (currentDay >= 75) return { name: "Legend", tier: 6 };
-    if (currentDay >= 60) return { name: "Unbreakable", tier: 5 };
-    if (currentDay >= 45) return { name: "Relentless", tier: 4 };
-    if (currentDay >= 30) return { name: "Forged", tier: 3 };
-    if (currentDay >= 15) return { name: "Locked In", tier: 2 };
-    if (currentDay >= 5) return { name: "Igniting", tier: 1 };
-    return { name: "Recruit", tier: 0 };
-  }, [currentDay]);
+  const viewedStats = useMemo(
+    () => (viewedEpoch ? epochStats(progress, viewedEpoch, currentDateKey) : null),
+    [viewedEpoch, progress, currentDateKey],
+  );
 
-  const persistDaily = useCallback(
-    async (nextRecord: DailyRecord) => {
+  const hardBlockOn = hardBlockActive(profile?.hardBlock, currentDateKey);
+  const hardBlockLeft = hardBlockRemaining(profile?.hardBlock, currentDateKey);
+  // A hard block forces the full floor — disruption mode is paused while it runs.
+  const effectiveDisruption = daily.disruption && !hardBlockOn;
+  const requiredKeys = requiredFloorKeys({ disruption: effectiveDisruption });
+  const completedToday = requiredKeys.filter((key) => daily[key]).length;
+  const todayComplete = isDayComplete({ ...daily, disruption: effectiveDisruption });
+  const completionPct = requiredKeys.length
+    ? Math.round((completedToday / requiredKeys.length) * 100)
+    : 0;
+  const currentDay = active ? dayNumberInEpoch(active.startDate, currentDateKey) : 0;
+
+  const items = useMemo(() => floorItems(phase), [phase]);
+  const visibleItems = useMemo(
+    () => items.filter((item) => requiredKeys.includes(item.key as never)),
+    [items, requiredKeys],
+  );
+
+  const epochLeetcode = useMemo(
+    () => (viewedEpoch ? leetcodeEntries(progress, viewedEpoch, currentDateKey) : []),
+    [progress, viewedEpoch, currentDateKey],
+  );
+
+  // Weekly reviews that fall inside the streak currently being viewed (works for
+  // archived epochs too), newest first.
+  const viewedReviews = useMemo(() => {
+    if (!viewedEpoch) return [];
+    return Object.entries(reviews)
+      .filter(([weekStart]) => dateInEpoch(viewedEpoch, weekStart, currentDateKey))
+      .map(([weekStart, value]) => ({ weekStart, note: value.note }))
+      .filter((entry) => entry.note.trim().length > 0)
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+  }, [reviews, viewedEpoch, currentDateKey]);
+
+  // The week to review: on Sunday it's the week ending today; on Monday it's
+  // last week. Any other day, there's nothing to prompt.
+  const recapWeekStart = useMemo(() => {
+    const dow = new Date(`${currentDateKey}T00:00:00`).getDay();
+    if (dow === 0) return weekStartKey(currentDateKey);
+    if (dow === 1) return weekStartKey(addDays(currentDateKey, -1));
+    return null;
+  }, [currentDateKey]);
+
+  const recapStats = useMemo(
+    () =>
+      recapWeekStart
+        ? epochStats(
+            progress,
+            { id: "recap", startDate: recapWeekStart, endDate: addDays(recapWeekStart, 6) },
+            currentDateKey,
+          )
+        : null,
+    [progress, recapWeekStart, currentDateKey],
+  );
+
+  const persistDay = useCallback(
+    async (dateKey: string, nextRecord: DailyRecord) => {
       if (!user || !db) return;
       const activeDb = db;
       setSaving(true);
       try {
-        const withStatus = {
-          ...nextRecord,
-          status: calculateStatus(nextRecord),
-          updatedAt: serverTimestamp(),
-        };
-        await setDoc(doc(activeDb, "users", user.uid, "daily", currentDateKey), withStatus, {
-          merge: true,
-        });
-        setDaily(withStatus);
-        setProgress((items) => ({ ...items, [currentDateKey]: withStatus }));
+        const complete = isDayComplete(nextRecord);
+        const normalized: DailyRecord = { ...nextRecord, complete, legacy: false };
+        await setDoc(
+          doc(activeDb, "users", user.uid, "daily", dateKey),
+          { ...dailyToFirestore(normalized), updatedAt: serverTimestamp() },
+          { merge: true },
+        );
+        setProgress((items) => ({ ...items, [dateKey]: normalized }));
+        if (dateKey === currentDateKey) setDaily(normalized);
       } finally {
         setSaving(false);
       }
@@ -354,10 +428,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!user) {
-      return;
-    }
-
+    if (!user) return;
     setPhoneNumber(user.phoneNumber ?? "");
   }, [user]);
 
@@ -420,6 +491,7 @@ export default function Home() {
         records[entry.id] = recordFromData(entry.data());
       });
       setProgress(records);
+      setProgressLoaded(true);
     };
 
     loadProgress().catch((error: Error) => {
@@ -432,12 +504,127 @@ export default function Home() {
   }, [profile, user]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadEpochs = async () => {
+      if (!user || !db || !profile) return;
+      const activeDb = db;
+      const snapshot = await getDocs(collection(activeDb, "users", user.uid, "epochs"));
+      if (cancelled) return;
+      const list: Epoch[] = [];
+      snapshot.forEach((entry) => {
+        const data = entry.data();
+        list.push({
+          id: entry.id,
+          startDate: data.startDate,
+          endDate: data.endDate ?? null,
+          label: data.label ?? "",
+          createdAt: data.createdAt,
+        });
+      });
+      setEpochs(list);
+      setEpochsLoaded(true);
+    };
+
+    loadEpochs().catch((error: Error) => {
+      if (!cancelled) setAuthMessage(error.message);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, user, epochReloadKey]);
+
+  // Bootstrap / migration. Runs once everything is loaded and there are no
+  // epochs yet. With existing history we ask for confirmation; a fresh account
+  // gets a single active epoch silently.
+  useEffect(() => {
+    if (!user || !db || !profile || !epochsLoaded || !progressLoaded) return;
+    if (epochs.length > 0) return;
+    if (bootstrapRef.current) return;
+
+    if (Object.keys(progress).length > 0) {
+      setMigrationEnd(latestDataDate ?? currentDateKey);
+      setNeedsMigration(true);
+    } else {
+      bootstrapRef.current = true;
+      const activeDb = db;
+      setDoc(doc(activeDb, "users", user.uid, "epochs", newEpochId()), {
+        startDate: profile.startDate || currentDateKey,
+        endDate: null,
+        label: "",
+        createdAt: serverTimestamp(),
+      })
+        .then(() => setEpochReloadKey((key) => key + 1))
+        .catch((error: Error) => setAuthMessage(error.message));
+    }
+  }, [
+    user,
+    profile,
+    epochsLoaded,
+    progressLoaded,
+    epochs,
+    progress,
+    latestDataDate,
+    currentDateKey,
+  ]);
+
+  useEffect(() => {
     if (!user || !db || !profile) return;
     const tz = browserTimezone();
     if (profile.timezone === tz) return;
     const activeDb = db;
     setDoc(doc(activeDb, "users", user.uid), { timezone: tz }, { merge: true }).catch(() => {});
   }, [profile, user]);
+
+  useEffect(() => {
+    if (!profile) return;
+    setSettingsName(profile.name ?? "");
+    setPhaseDraft(profile.phase ?? defaultPhase);
+    setHardBlockDraft(
+      profile.hardBlock ?? { active: false, days: 14, startDate: currentDateKey },
+    );
+  }, [profile, currentDateKey]);
+
+  // Load every saved weekly review so they can be shown alongside their epoch
+  // (including archived ones).
+  useEffect(() => {
+    let cancelled = false;
+    const loadReviews = async () => {
+      if (!user || !db || !profile) return;
+      const activeDb = db;
+      const snapshot = await getDocs(collection(activeDb, "users", user.uid, "reviews"));
+      if (cancelled) return;
+      const map: Record<string, { note: string }> = {};
+      snapshot.forEach((entry) => {
+        map[entry.id] = { note: entry.data().note ?? "" };
+      });
+      setReviews(map);
+      setReviewsLoaded(true);
+    };
+    loadReviews().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user, profile]);
+
+  // Surface the recap pop-up once per week, only if it hasn't been saved or
+  // dismissed for that week.
+  useEffect(() => {
+    if (recapPromptedRef.current) return;
+    if (!active || !reviewsLoaded || !recapWeekStart) return;
+    if (reviews[recapWeekStart]) return;
+    let dismissed = false;
+    try {
+      dismissed = localStorage.getItem(`recap-dismissed-${recapWeekStart}`) === "1";
+    } catch {
+      dismissed = false;
+    }
+    if (dismissed) return;
+    recapPromptedRef.current = true;
+    setRecapNote("");
+    setRecapOpen(true);
+  }, [active, reviewsLoaded, recapWeekStart, reviews]);
 
   function readableError(error: unknown) {
     if (error instanceof FirebaseError) {
@@ -545,6 +732,7 @@ export default function Home() {
         email: user.email,
         phoneNumber: user.phoneNumber,
         timezone: browserTimezone(),
+        phase: defaultPhase,
       };
       await setDoc(profileRef, nextProfile, { merge: true });
       setProfile(nextProfile);
@@ -557,12 +745,6 @@ export default function Home() {
     }
   }
 
-  useEffect(() => {
-    if (!profile) return;
-    setSettingsName(profile.name ?? "");
-    setSettingsStartDate(profile.startDate);
-  }, [profile]);
-
   async function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user || !db || !profile) return;
@@ -572,14 +754,14 @@ export default function Home() {
     setSettingsMessage("");
 
     try {
-      const updates: Pick<UserProfile, "name" | "startDate"> = {
+      const updates: Partial<UserProfile> = {
         name: nextName,
-        startDate: settingsStartDate,
+        phase: phaseDraft,
+        hardBlock: hardBlockDraft,
       };
       await setDoc(doc(activeDb, "users", user.uid), updates, { merge: true });
       setProfile({ ...profile, ...updates });
       setProfileName(nextName);
-      setStartDate(settingsStartDate);
       setSettingsMessage("Settings saved.");
     } catch (error) {
       setSettingsMessage(readableError(error));
@@ -588,62 +770,41 @@ export default function Home() {
     }
   }
 
-  async function toggleTask(key: Task["key"]) {
-    const nextRecord = { ...daily, [key]: !daily[key] };
+  async function toggleFloor(key: FloorKey, dateKey = currentDateKey) {
+    const current =
+      dateKey === currentDateKey ? daily : progress[dateKey] ?? { ...emptyDailyRecord };
     try {
-      await persistDaily(nextRecord);
+      await persistDay(dateKey, { ...current, [key]: !current[key] });
       setAuthMessage("");
     } catch (error) {
       setAuthMessage(readableError(error));
     }
   }
 
-  async function repairDay(dateKey: string) {
-    if (!user || !db) return;
-    // Repair is only for previous days — today is yours to actually earn.
-    if (dateKey >= currentDateKey) {
-      setAuthMessage("You can only repair days that have already passed.");
-      return;
-    }
-    const existing = recordFromData(progress[dateKey] ?? emptyDailyRecord);
-    // A repair just fixes forgotten check-offs — the photo is the proof you
-    // actually showed up that day, so it has to exist first.
-    if (!existing.progressPhotoUrl) {
-      setAuthMessage("Add a photo from that day before you can repair it.");
-      return;
-    }
-    if (existing.status !== "gray") return;
-    if (tokens.available <= 0) {
-      setAuthMessage("No repair tokens yet. Earn a blue star to bank one.");
-      return;
-    }
-
-    const activeDb = db;
-    setBusy(true);
-    setAuthMessage("");
+  async function setDisruption(value: boolean, dateKey = currentDateKey) {
+    const current =
+      dateKey === currentDateKey ? daily : progress[dateKey] ?? { ...emptyDailyRecord };
     try {
-      // Fill the five core habits only — never LeetCode, so the day lands on a
-      // gold star and can't mint a fresh repair token.
-      const repaired: DailyRecord = {
-        ...existing,
-        workout1: true,
-        outsideWorkout: true,
-        strictDiet: true,
-        waterGallon: true,
-        read10Pages: true,
-        repaired: true,
-        updatedAt: serverTimestamp(),
-      };
-      repaired.status = calculateStatus(repaired);
-      await setDoc(doc(activeDb, "users", user.uid, "daily", dateKey), repaired, {
-        merge: true,
-      });
-      setProgress((items) => ({ ...items, [dateKey]: repaired }));
-      setAuthMessage("Day repaired — gold star restored. Streak protected.");
+      await persistDay(dateKey, { ...current, disruption: value });
+      setAuthMessage("");
     } catch (error) {
       setAuthMessage(readableError(error));
-    } finally {
-      setBusy(false);
+    }
+  }
+
+  async function saveLeetcodeLog(log: LeetcodeLog, dateKey = currentDateKey) {
+    const current =
+      dateKey === currentDateKey ? daily : progress[dateKey] ?? { ...emptyDailyRecord };
+    const cleaned: LeetcodeLog = {
+      name: log.name?.trim() || "",
+      pattern: log.pattern || "",
+      note: log.note?.trim() || "",
+    };
+    try {
+      await persistDay(dateKey, { ...current, leetcodeLog: cleaned });
+      setAuthMessage("Problem logged.");
+    } catch (error) {
+      setAuthMessage(readableError(error));
     }
   }
 
@@ -657,8 +818,7 @@ export default function Home() {
     const existingRecord =
       targetDateKey === currentDateKey
         ? daily
-        : recordFromData(progress[targetDateKey] ?? emptyDailyRecord);
-    const activeDb = db;
+        : progress[targetDateKey] ?? { ...emptyDailyRecord };
     setBusy(true);
     setAuthMessage("");
 
@@ -675,22 +835,9 @@ export default function Home() {
         },
       });
       const progressPhotoUrl = await getDownloadURL(photoRef);
-      const withStatus = {
-        ...existingRecord,
-        progressPhotoUrl,
-        status: calculateStatus({ ...existingRecord, progressPhotoUrl }),
-        updatedAt: serverTimestamp(),
-      };
-      await setDoc(doc(activeDb, "users", user.uid, "daily", targetDateKey), withStatus, {
-        merge: true,
-      });
-      setProgress((items) => ({ ...items, [targetDateKey]: withStatus }));
-      if (targetDateKey === currentDateKey) {
-        setDaily(withStatus);
-      }
-      setAuthMessage(
-        targetDateKey === currentDateKey ? "Progress photo saved." : "Past progress photo saved.",
-      );
+      const nextRecord: DailyRecord = { ...existingRecord, progressPhotoUrl };
+      await persistDay(targetDateKey, nextRecord);
+      setAuthMessage("Progress photo saved.");
     } catch (error) {
       setAuthMessage(readableError(error));
     } finally {
@@ -705,6 +852,111 @@ export default function Home() {
     fileInputRef.current?.click();
   }
 
+  async function runMigration() {
+    if (!user || !db || !profile) return;
+    const activeDb = db;
+    setBusy(true);
+    setAuthMessage("");
+    try {
+      const start = earliestDataDate ?? profile.startDate;
+      const end = migrationEnd;
+      // Keep today inside the new active streak; never overlap the archive.
+      const activeStart = end >= currentDateKey ? addDays(end, 1) : currentDateKey;
+
+      await setDoc(doc(activeDb, "users", user.uid, "epochs", newEpochId()), {
+        startDate: start,
+        endDate: end,
+        label: migrationLabel.trim() || "Original 75 Hard",
+        createdAt: serverTimestamp(),
+      });
+      await setDoc(doc(activeDb, "users", user.uid, "epochs", newEpochId()), {
+        startDate: activeStart,
+        endDate: null,
+        label: newStreakLabel.trim(),
+        createdAt: serverTimestamp(),
+      });
+
+      setNeedsMigration(false);
+      setEpochReloadKey((key) => key + 1);
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function endCurrentStreak() {
+    if (!user || !db || !active) return;
+    const activeDb = db;
+    setBusy(true);
+    try {
+      await setDoc(
+        doc(activeDb, "users", user.uid, "epochs", active.id),
+        { endDate: currentDateKey },
+        { merge: true },
+      );
+      setSettingsOpen(false);
+      setView("today");
+      setEpochReloadKey((key) => key + 1);
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startNewStreak() {
+    if (!user || !db || active) return;
+    const activeDb = db;
+    setBusy(true);
+    try {
+      await setDoc(doc(activeDb, "users", user.uid, "epochs", newEpochId()), {
+        startDate: newStreakStart,
+        endDate: null,
+        label: newStreakLabel.trim(),
+        createdAt: serverTimestamp(),
+      });
+      setNewStreakLabel("");
+      setNewStreakStart(currentDateKey);
+      setEpochReloadKey((key) => key + 1);
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveRecap() {
+    if (!user || !db || !recapWeekStart) return;
+    const activeDb = db;
+    const note = recapNote.trim();
+    setBusy(true);
+    try {
+      await setDoc(
+        doc(activeDb, "users", user.uid, "reviews", recapWeekStart),
+        { note, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setReviews((current) => ({ ...current, [recapWeekStart]: { note } }));
+      setRecapOpen(false);
+    } catch (error) {
+      setAuthMessage(readableError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function dismissRecap() {
+    if (recapWeekStart) {
+      try {
+        localStorage.setItem(`recap-dismissed-${recapWeekStart}`, "1");
+      } catch {
+        // Ignore storage failures — worst case the prompt reappears next open.
+      }
+    }
+    setRecapOpen(false);
+  }
+
   async function handleSignOut() {
     if (!auth) return;
     await signOut(auth);
@@ -713,9 +965,18 @@ export default function Home() {
     setProfileStatus("loading");
     setDaily(emptyDailyRecord);
     setProgress({});
+    setProgressLoaded(false);
+    setEpochs([]);
+    setEpochsLoaded(false);
+    setReviews({});
+    setReviewsLoaded(false);
+    setRecapOpen(false);
+    recapPromptedRef.current = false;
+    bootstrapRef.current = false;
     setSettingsOpen(false);
     setSettingsMessage("");
-    setExpandedProgressDate(null);
+    setExpandedDate(null);
+    setBrowseEpochId(null);
     setConfirmationResult(null);
     setSmsCode("");
   }
@@ -726,9 +987,9 @@ export default function Home() {
         <section className="auth-card glass-panel">
           <div className="brand-lockup">
             <div className="app-icon">
-              <Star size={26} fill="currentColor" />
+              <Flame size={26} fill="currentColor" />
             </div>
-            <p>75 hard</p>
+            <p>streak</p>
           </div>
           <h1>Connect Firebase to unlock your private tracker.</h1>
           <p className="muted">
@@ -766,11 +1027,11 @@ export default function Home() {
         <section className="auth-card glass-panel">
           <div className="brand-lockup">
             <div className="app-icon">
-              <Star size={26} fill="currentColor" />
+              <Flame size={26} fill="currentColor" />
             </div>
-            <p>75 hard</p>
+            <p>streak</p>
           </div>
-          <h1>Your private 75 Hard command center.</h1>
+          <h1>Your private training &amp; prep streak.</h1>
           <p className="muted">
             Sign in with your phone number. Your daily photos stay locked to your account.
           </p>
@@ -835,9 +1096,9 @@ export default function Home() {
         <section className="auth-card glass-panel">
           <div className="brand-lockup">
             <div className="app-icon">
-              <Star size={26} fill="currentColor" />
+              <Flame size={26} fill="currentColor" />
             </div>
-            <p>75 hard</p>
+            <p>streak</p>
           </div>
           <h1>We couldn&apos;t load your tracker.</h1>
           <p className="muted">
@@ -864,11 +1125,11 @@ export default function Home() {
             <div className="app-icon">
               <CalendarDays size={26} />
             </div>
-            <p>75 hard</p>
+            <p>streak</p>
           </div>
-          <h1>When did day one begin?</h1>
+          <h1>When did this streak begin?</h1>
           <p className="muted">
-            Add your name and start date. The app will calculate the current day automatically.
+            Add your name and start date. Everything else is set up for you.
           </p>
           <form className="auth-form" onSubmit={saveProfile}>
             <label htmlFor="profileName">Name</label>
@@ -902,27 +1163,111 @@ export default function Home() {
     );
   }
 
+  if (needsMigration) {
+    const start = earliestDataDate ?? profile.startDate;
+    const dayCount = Object.keys(progress).length;
+    return (
+      <Shell>
+        <section className="auth-card glass-panel migration-card">
+          <div className="brand-lockup">
+            <div className="app-icon">
+              <Archive size={24} />
+            </div>
+            <p>Preserve your history</p>
+          </div>
+          <h1>Archive your original run.</h1>
+          <p className="muted">
+            Found <strong>{dayCount} days</strong> of history starting{" "}
+            {formatRange(start, latestDataDate ?? start).split(" – ")[0]}. We&apos;ll save it as your
+            first archived streak — nothing is deleted or rewritten — and start a fresh streak with
+            the new rules.
+          </p>
+          <form
+            className="auth-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              runMigration();
+            }}
+          >
+            <label htmlFor="migrationLabel">Archive label</label>
+            <div className="email-field">
+              <Flag size={18} />
+              <input
+                id="migrationLabel"
+                type="text"
+                value={migrationLabel}
+                onChange={(event) => setMigrationLabel(event.target.value)}
+                placeholder="Original 75 Hard"
+              />
+            </div>
+            <label htmlFor="migrationEnd">End date of the original run</label>
+            <input
+              className="date-input"
+              id="migrationEnd"
+              type="date"
+              value={migrationEnd}
+              min={start}
+              onChange={(event) => setMigrationEnd(event.target.value)}
+              required
+            />
+            <p className="muted small">
+              Defaults to your last logged day ({latestDataDate ?? start}). Adjust if you want.
+            </p>
+            <button className="primary-button" type="submit" disabled={busy}>
+              {busy ? "Archiving..." : "Archive & start fresh"}
+            </button>
+          </form>
+          {authMessage ? <p className="system-message">{authMessage}</p> : null}
+        </section>
+      </Shell>
+    );
+  }
+
+  const expanded = expandedDate
+    ? (() => {
+        const record = progress[expandedDate] ?? { ...emptyDailyRecord };
+        const day = viewedEpoch
+          ? dayNumberInEpoch(viewedEpoch.startDate, expandedDate)
+          : 0;
+        const editable =
+          !isBrowsingArchive &&
+          !record.legacy &&
+          expandedDate <= currentDateKey &&
+          Boolean(active) &&
+          Boolean(active && dateInEpoch(active, expandedDate, currentDateKey));
+        return { dateKey: expandedDate, day, record, editable };
+      })()
+    : null;
+
   return (
     <Shell>
       <main className="app-frame">
         <header className="top-bar glass-panel">
           <div className="brand-mini">
             <div className="app-icon">
-              <Star size={20} fill="currentColor" />
+              <Flame size={20} fill="currentColor" />
             </div>
             <div className="brand-mini-copy">
               <p className="greeting">{displayName}</p>
-              <span className="rank-chip" data-tier={rank.tier}>
-                <Trophy size={12} />
-                {rank.name}
-              </span>
+              {active ? (
+                <span className="rank-chip" data-tier={Math.min(Math.floor(currentDay / 15), 6)}>
+                  <Trophy size={12} />
+                  {active.label?.trim() || "Current streak"}
+                </span>
+              ) : (
+                <span className="rank-chip" data-tier={0}>
+                  <Trophy size={12} />
+                  No active streak
+                </span>
+              )}
             </div>
           </div>
-          <div className="day-display">
-            <span>Day</span>
-            <strong>{currentDay}</strong>
-            <span>/ 75</span>
-          </div>
+          {active ? (
+            <div className="day-display">
+              <span>Day</span>
+              <strong>{currentDay}</strong>
+            </div>
+          ) : null}
           <div className="top-actions">
             <button
               className="icon-button"
@@ -950,7 +1295,7 @@ export default function Home() {
               <div className="settings-heading">
                 <div>
                   <p>Settings</p>
-                  <h2 id="settings-title">Profile</h2>
+                  <h2 id="settings-title">Your setup</h2>
                 </div>
                 <button
                   className="icon-button"
@@ -976,15 +1321,108 @@ export default function Home() {
                   />
                 </div>
 
-                <label htmlFor="settingsStartDate">Start date</label>
-                <input
-                  className="date-input"
-                  id="settingsStartDate"
-                  type="date"
-                  value={settingsStartDate}
-                  onChange={(event) => setSettingsStartDate(event.target.value)}
-                  required
-                />
+                <div className="settings-section-title">
+                  <Target size={15} /> Current phase
+                </div>
+                <label htmlFor="phaseLabel">Phase</label>
+                <div className="email-field">
+                  <Salad size={18} />
+                  <input
+                    id="phaseLabel"
+                    type="text"
+                    placeholder="Lean bulk, Mini-cut, ..."
+                    value={phaseDraft.label}
+                    onChange={(event) =>
+                      setPhaseDraft((draft) => ({ ...draft, label: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field-row">
+                  <div className="field-col">
+                    <label htmlFor="phaseProtein">Protein (g)</label>
+                    <input
+                      className="date-input"
+                      id="phaseProtein"
+                      type="number"
+                      inputMode="numeric"
+                      value={phaseDraft.proteinTarget}
+                      onChange={(event) =>
+                        setPhaseDraft((draft) => ({
+                          ...draft,
+                          proteinTarget: Number(event.target.value) || 0,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="field-col">
+                    <label htmlFor="phaseCalories">Calories</label>
+                    <input
+                      className="date-input"
+                      id="phaseCalories"
+                      type="number"
+                      inputMode="numeric"
+                      value={phaseDraft.calorieTarget}
+                      onChange={(event) =>
+                        setPhaseDraft((draft) => ({
+                          ...draft,
+                          calorieTarget: Number(event.target.value) || 0,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="settings-section-title">
+                  <Zap size={15} /> Hard-block mode
+                </div>
+                <label className="toggle-line">
+                  <span>
+                    Run a stricter, time-boxed block
+                    <span className="muted small"> — forces the full floor every day</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={hardBlockDraft.active}
+                    onChange={(event) =>
+                      setHardBlockDraft((draft) => ({ ...draft, active: event.target.checked }))
+                    }
+                  />
+                </label>
+                {hardBlockDraft.active ? (
+                  <div className="field-row">
+                    <div className="field-col">
+                      <label htmlFor="hbDays">Length (days)</label>
+                      <input
+                        className="date-input"
+                        id="hbDays"
+                        type="number"
+                        inputMode="numeric"
+                        value={hardBlockDraft.days}
+                        onChange={(event) =>
+                          setHardBlockDraft((draft) => ({
+                            ...draft,
+                            days: Number(event.target.value) || 1,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="field-col">
+                      <label htmlFor="hbStart">Start</label>
+                      <input
+                        className="date-input"
+                        id="hbStart"
+                        type="date"
+                        value={hardBlockDraft.startDate}
+                        onChange={(event) =>
+                          setHardBlockDraft((draft) => ({
+                            ...draft,
+                            startDate: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="profile-facts">
                   <div>
@@ -995,10 +1433,6 @@ export default function Home() {
                     <span>Timezone</span>
                     <strong>{profile.timezone || browserTimezone()}</strong>
                   </div>
-                  <div>
-                    <span>Current day</span>
-                    <strong>{currentDay} of 75</strong>
-                  </div>
                 </div>
 
                 <button className="primary-button" type="submit" disabled={settingsSaving}>
@@ -1007,6 +1441,19 @@ export default function Home() {
                 </button>
               </form>
               {settingsMessage ? <p className="settings-status">{settingsMessage}</p> : null}
+
+              {active ? (
+                <button
+                  className="secondary-button danger-button"
+                  type="button"
+                  onClick={endCurrentStreak}
+                  disabled={busy}
+                >
+                  <Flag size={18} />
+                  End current streak &amp; archive it
+                </button>
+              ) : null}
+
               <button className="secondary-button signout-button" type="button" onClick={handleSignOut}>
                 <LogOut size={18} />
                 Sign out
@@ -1040,23 +1487,103 @@ export default function Home() {
           </div>
         ) : null}
 
+        {recapOpen && recapWeekStart ? (
+          <div className="settings-scrim" role="presentation" onClick={dismissRecap}>
+            <section
+              className="recap-window glass-panel"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="recap-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="info-heading">
+                <div>
+                  <p className="eyebrow">Weekly recap</p>
+                  <h2 id="recap-title">
+                    {formatRange(recapWeekStart, addDays(recapWeekStart, 6))}
+                  </h2>
+                </div>
+                <button
+                  className="icon-button"
+                  aria-label="Dismiss"
+                  type="button"
+                  onClick={dismissRecap}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              {recapStats ? (
+                <div className="recap-stats">
+                  <div>
+                    <strong>{recapStats.completed}</strong>
+                    <span>Completed</span>
+                  </div>
+                  <div>
+                    <strong>{recapStats.disruptionDays}</strong>
+                    <span>Disruption</span>
+                  </div>
+                  <div>
+                    <strong>{recapStats.missed}</strong>
+                    <span>Misses</span>
+                  </div>
+                </div>
+              ) : null}
+              <textarea
+                className="review-input"
+                placeholder="A short note on the week — what worked, what to adjust."
+                value={recapNote}
+                onChange={(event) => setRecapNote(event.target.value)}
+                rows={3}
+              />
+              <div className="recap-actions">
+                <button className="text-button" type="button" onClick={dismissRecap}>
+                  Skip this week
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={saveRecap}
+                  disabled={busy}
+                >
+                  <Save size={16} /> Save recap
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
         <nav className="view-tabs glass-panel" aria-label="Primary">
           <button
             className={view === "today" ? "active" : ""}
             type="button"
             onClick={() => {
               setView("today");
-              setExpandedProgressDate(null);
+              setExpandedDate(null);
+              setBrowseEpochId(null);
             }}
           >
             Today
           </button>
           <button
-            className={view === "progress" ? "active" : ""}
+            className={view === "history" ? "active" : ""}
             type="button"
-            onClick={() => setView("progress")}
+            onClick={() => {
+              setView("history");
+              setExpandedDate(null);
+              setBrowseEpochId(null);
+            }}
           >
-            Progress
+            History
+          </button>
+          <button
+            className={view === "archive" ? "active" : ""}
+            type="button"
+            onClick={() => {
+              setView("archive");
+              setExpandedDate(null);
+            }}
+          >
+            Archive
           </button>
         </nav>
 
@@ -1071,322 +1598,640 @@ export default function Home() {
         />
 
         {view === "today" ? (
-          <section className="daily-layout">
-            <div className={`hero-status glass-panel ${daily.status}`}>
-              <div className="hero-top">
-                <div>
-                  <p>{statusLabel(daily.status)}</p>
-                  <h1>
-                    {daily.status === "blue"
-                      ? "Blue looks good on you."
-                      : daily.status === "gold"
-                      ? "Gold locked. Push for blue."
-                      : "Stack the day."}
-                  </h1>
+          !active ? (
+            <section className="daily-layout">
+              <div className="empty-streak glass-panel">
+                <Flame size={32} />
+                <h1>No active streak.</h1>
+                <p className="muted">Start a new one whenever you&apos;re ready.</p>
+                <label htmlFor="newStreakStart">Start date</label>
+                <input
+                  className="date-input"
+                  id="newStreakStart"
+                  type="date"
+                  value={newStreakStart}
+                  onChange={(event) => setNewStreakStart(event.target.value)}
+                />
+                <label htmlFor="newStreakLabel">Label (optional)</label>
+                <div className="email-field">
+                  <Flag size={18} />
+                  <input
+                    id="newStreakLabel"
+                    type="text"
+                    placeholder="e.g. Spring block"
+                    value={newStreakLabel}
+                    onChange={(event) => setNewStreakLabel(event.target.value)}
+                  />
                 </div>
                 <button
-                  className={`status-star ${daily.status} ${
-                    daily.progressPhotoUrl ? "has-photo" : ""
-                  } ${daily.status !== "gray" ? "lit" : ""}`}
+                  className="primary-button"
                   type="button"
-                  aria-label={daily.progressPhotoUrl ? "Replace today's photo" : "Add today's photo"}
-                  onClick={() => choosePhotoForDate()}
+                  onClick={startNewStreak}
                   disabled={busy}
                 >
-                  {daily.progressPhotoUrl ? (
-                    <Image
-                      src={daily.progressPhotoUrl}
-                      alt="Today progress"
-                      fill
-                      sizes="120px"
-                      style={{ objectFit: "cover" }}
-                      priority
-                    />
-                  ) : (
-                    <Star className="status-star-main" size={48} fill="currentColor" />
-                  )}
-                  <span className="status-star-badge" aria-hidden="true">
-                    {daily.progressPhotoUrl ? (
-                      <Star size={16} fill="currentColor" />
-                    ) : (
-                      <Camera size={15} />
-                    )}
-                  </span>
+                  <Plus size={18} />
+                  Start new streak
                 </button>
               </div>
-              <div className="hero-progress">
-                <div className="progress-track">
-                  <div className="progress-fill" style={{ width: `${completionPct}%` }} />
-                </div>
-                <div className="hero-progress-meta">
-                  <span>
-                    <Zap size={13} /> {completedToday}/6 tasks today
-                  </span>
-                  <span>{completionPct}% of 75</span>
-                </div>
-              </div>
-            </div>
-
-            <section className="stats-bar glass-panel" aria-label="Your stats">
-              <button className="stat" type="button" onClick={() => setInfo(infoTopics.streak)}>
-                <span className="stat-icon streak">
-                  <Flame size={30} />
-                  <strong className="stat-count">{streak}</strong>
-                </span>
-                <span className="stat-label">Day streak</span>
-              </button>
-              <button className="stat" type="button" onClick={() => setInfo(infoTopics.blue)}>
-                <span className="stat-icon blue">
-                  <Star size={30} fill="currentColor" />
-                  <strong className="stat-count">{starCounts.blue}</strong>
-                </span>
-                <span className="stat-label">Blue stars</span>
-              </button>
-              <button className="stat" type="button" onClick={() => setInfo(infoTopics.gold)}>
-                <span className="stat-icon gold">
-                  <Star size={30} fill="currentColor" />
-                  <strong className="stat-count">{starCounts.gold}</strong>
-                </span>
-                <span className="stat-label">Gold stars</span>
-              </button>
-              <button className="stat" type="button" onClick={() => setInfo(infoTopics.tokens)}>
-                <span className="stat-icon token">
-                  <Wand2 size={30} />
-                  <strong className="stat-count">{tokens.available}</strong>
-                </span>
-                <span className="stat-label">Repair tokens</span>
-              </button>
             </section>
-
-            <section className="task-list glass-panel" aria-label="Daily checklist">
-              {tasks.map((task) => (
-                <button
-                  className={`task-row ${daily[task.key] ? "complete" : ""} ${
-                    task.special ? "special" : ""
-                  }`}
-                  key={task.key}
-                  type="button"
-                  onClick={() => toggleTask(task.key)}
-                >
-                  <span className="task-icon">{task.icon}</span>
-                  <span className="task-copy">
-                    <strong>{task.title}</strong>
-                  </span>
-                  <span className="check-indicator">{daily[task.key] ? <Check size={17} /> : null}</span>
-                </button>
-              ))}
-            </section>
-
-            <p className="save-state">
-              {busy ? "Uploading..." : saving ? "Saving..." : "Saved privately"}
-            </p>
-            {authMessage ? <p className="save-state">{authMessage}</p> : null}
-          </section>
-        ) : (
-          <section className="progress-view">
-            {expandedProgress ? (
-              (() => {
-                const { dateKey, day, item } = expandedProgress;
-                const hasPhoto = Boolean(item.progressPhotoUrl);
-                const isPast = dateKey < currentDateKey;
-                // Only incomplete past days that already have a proof photo can
-                // be repaired; without a photo you must upload one first.
-                const incomplete = isPast && item.status === "gray";
-                const needsPhoto = incomplete && !hasPhoto;
-                const canRepair = incomplete && hasPhoto && tokens.available > 0;
-                const lockedRepair = incomplete && hasPhoto && tokens.available <= 0;
-
-                return (
-                  <div className="expanded-photo-panel">
-                    <div className="expanded-heading">
-                      <button
-                        className="text-button back-button"
-                        type="button"
-                        onClick={() => setExpandedProgressDate(null)}
-                      >
-                        ← All days
-                      </button>
-                      <span className={`status-pill ${item.status}`}>
-                        <Star size={13} fill="currentColor" />
-                        {statusLabel(item.status)}
-                      </span>
-                    </div>
-
-                    <button
-                      className={`expanded-photo-view ${item.status}`}
-                      type="button"
-                      onClick={() => hasPhoto && setExpandedProgressDate(null)}
-                      aria-label={`Day ${day} progress`}
-                    >
-                      {hasPhoto ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.progressPhotoUrl}
-                          alt={`Day ${day} progress expanded`}
-                          loading="eager"
-                          decoding="async"
-                        />
-                      ) : (
-                        <div className="expanded-photo-empty">
-                          <ImageIcon size={30} />
-                          <span>No progress photo yet</span>
-                        </div>
-                      )}
-                      <span className="expanded-photo-meta">
-                        <span>Day {day}</span>
-                        {item.repaired ? (
-                          <span className="repaired-flag">
-                            <Wand2 size={16} /> Repaired
-                          </span>
-                        ) : (
-                          <Star size={30} fill="currentColor" />
-                        )}
-                      </span>
-                    </button>
-
-                    <div className="day-checklist glass-panel">
-                      {tasks.map((task) => (
-                        <div
-                          className={`checklist-row ${item[task.key] ? "done" : ""}`}
-                          key={task.key}
-                        >
-                          <span className="checklist-icon">{task.icon}</span>
-                          <span className="checklist-title">{task.title}</span>
-                          <span className="checklist-mark">
-                            {item[task.key] ? <Check size={15} /> : <X size={14} />}
-                          </span>
-                        </div>
-                      ))}
-                      <div className={`checklist-row ${hasPhoto ? "done" : ""}`}>
-                        <span className="checklist-icon">
-                          <Camera size={20} />
-                        </span>
-                        <span className="checklist-title">Progress photo</span>
-                        <span className="checklist-mark">
-                          {hasPhoto ? <Check size={15} /> : <X size={14} />}
-                        </span>
-                      </div>
-                    </div>
-
-                    {item.repaired ? (
-                      <div className="repair-banner repaired">
-                        <Wand2 size={18} />
-                        <p>This day was checked off with a blue-star repair token.</p>
-                      </div>
-                    ) : needsPhoto ? (
-                      <div className="repair-banner locked">
-                        <Camera size={18} />
-                        <p>Upload a photo from this day first, then you can repair it.</p>
-                      </div>
-                    ) : canRepair ? (
-                      <button
-                        className="repair-button"
-                        type="button"
-                        onClick={() => repairDay(dateKey)}
-                        disabled={busy}
-                      >
-                        <Wand2 size={18} />
-                        {busy ? "Repairing..." : "Forgot to check something off"}
-                        <span className="repair-cost">
-                          <Star size={12} fill="currentColor" /> 1 token
-                        </span>
-                      </button>
-                    ) : lockedRepair ? (
-                      <div className="repair-banner locked">
-                        <Lock size={18} />
-                        <p>Earn a blue star to bank a repair token, then fix this day.</p>
-                      </div>
-                    ) : null}
-
-                    <button
-                      className="secondary-button expanded-upload-button"
-                      type="button"
-                      onClick={() => choosePhotoForDate(dateKey)}
-                      disabled={busy}
-                    >
-                      <Upload size={18} />
-                      {busy ? "Uploading..." : hasPhoto ? "Replace photo" : "Add photo"}
-                    </button>
-                  </div>
-                );
-              })()
-            ) : (
-              <>
-                <div className="progress-heading">
+          ) : (
+            <section className="daily-layout">
+              <div className={`hero-status glass-panel ${todayComplete ? "blue" : "gray"}`}>
+                <div className="hero-top">
                   <div>
-                    <p>Progress</p>
-                    <h1>Revel a little.</h1>
+                    <p>{todayComplete ? "Done for the day" : "Stack the day"}</p>
+                    <h1>
+                      {todayComplete
+                        ? "You're free. Go live."
+                        : effectiveDisruption
+                        ? "Disruption day — keep the floor."
+                        : "One item at a time."}
+                    </h1>
                   </div>
-                </div>
-
-                <div className={`token-strip glass-panel ${tokens.available > 0 ? "charged" : ""}`}>
-                  <span className="token-strip-icon">
-                    <Wand2 size={18} />
-                  </span>
-                  <strong>
-                    {tokens.available} repair {tokens.available === 1 ? "token" : "tokens"}
-                  </strong>
                   <button
-                    className="info-button"
+                    className={`status-star ${todayComplete ? "blue lit" : "gray"} ${
+                      daily.progressPhotoUrl ? "has-photo" : ""
+                    }`}
                     type="button"
-                    aria-label="What are repair tokens?"
-                    onClick={() => setInfo(infoTopics.tokens)}
+                    aria-label={daily.progressPhotoUrl ? "Replace today's photo" : "Add today's photo"}
+                    onClick={() => choosePhotoForDate()}
+                    disabled={busy}
                   >
-                    <Info size={16} />
+                    {daily.progressPhotoUrl ? (
+                      <Image
+                        src={daily.progressPhotoUrl}
+                        alt="Today progress"
+                        fill
+                        sizes="120px"
+                        style={{ objectFit: "cover" }}
+                        priority
+                      />
+                    ) : todayComplete ? (
+                      <Check className="status-star-main" size={44} />
+                    ) : (
+                      <Camera className="status-star-main" size={40} />
+                    )}
+                    <span className="status-star-badge" aria-hidden="true">
+                      <Camera size={15} />
+                    </span>
                   </button>
                 </div>
-
-                <div className="progress-grid">
-                  {visibleDaysNewestFirst.map((day) => {
-                    const dateKey = dateKeyForDay(effectiveStartDate, day);
-                    const item = progress[dateKey] || emptyDailyRecord;
-                    const hasPhoto = Boolean(item.progressPhotoUrl);
-                    const isToday = dateKey === currentDateKey;
-
-                    return (
-                      <button
-                        className={`progress-tile ${item.status} ${
-                          hasPhoto ? "has-photo" : "missing-photo"
-                        } ${item.repaired ? "repaired" : ""} ${isToday ? "is-today" : ""}`}
-                        key={dateKey}
-                        type="button"
-                        onClick={() => setExpandedProgressDate(dateKey)}
-                        aria-label={`Open day ${day}`}
-                      >
-                        {hasPhoto ? (
-                          <Image
-                            src={item.progressPhotoUrl}
-                            alt={`Day ${day} progress`}
-                            fill
-                            sizes="(max-width: 760px) 33vw, 240px"
-                            style={{ objectFit: "cover" }}
-                          />
-                        ) : (
-                          <div className="tile-placeholder">
-                            <ImageIcon size={22} />
-                          </div>
-                        )}
-                        <div className="tile-scrim" />
-                        {item.repaired ? (
-                          <span className="tile-repaired" aria-hidden="true">
-                            <Wand2 size={13} />
-                          </span>
-                        ) : null}
-                        <div className="tile-meta">
-                          <span>Day {day}</span>
-                          <Star size={22} fill="currentColor" />
-                        </div>
-                      </button>
-                    );
-                  })}
+                <div className="hero-progress">
+                  <div className="progress-track">
+                    <div className="progress-fill" style={{ width: `${completionPct}%` }} />
+                  </div>
+                  <div className="hero-progress-meta">
+                    <span>
+                      <Zap size={13} /> {completedToday}/{requiredKeys.length} floor items
+                    </span>
+                    <span>{daily.progressPhotoUrl ? "Photo saved" : "Photo optional"}</span>
+                  </div>
                 </div>
-              </>
+              </div>
+
+              {hardBlockOn ? (
+                <div className="mode-banner hardblock glass-panel">
+                  <Zap size={17} />
+                  <span>
+                    Hard block active — {hardBlockLeft} {hardBlockLeft === 1 ? "day" : "days"} left.
+                    Full floor required.
+                  </span>
+                </div>
+              ) : (
+                <button
+                  className={`mode-banner disruption glass-panel ${
+                    daily.disruption ? "on" : ""
+                  }`}
+                  type="button"
+                  onClick={() => setDisruption(!daily.disruption)}
+                  disabled={saving}
+                >
+                  <Plane size={17} />
+                  <span>
+                    {daily.disruption
+                      ? "Disruption mode on — stripped floor."
+                      : "Travel or chaos today? Switch to disruption mode."}
+                  </span>
+                  <span className={`mini-switch ${daily.disruption ? "on" : ""}`} aria-hidden="true">
+                    <span />
+                  </span>
+                </button>
+              )}
+
+              <section className="stats-bar glass-panel" aria-label="Your stats">
+                <button className="stat" type="button" onClick={() => setInfo(infoTopics.streak)}>
+                  <span className="stat-icon streak">
+                    <Flame size={30} />
+                    <strong className="stat-count">{stats?.completed ?? 0}</strong>
+                  </span>
+                  <span className="stat-label">Streak</span>
+                </button>
+                <button className="stat" type="button" onClick={() => setInfo(infoTopics.disruption)}>
+                  <span className="stat-icon blue">
+                    <Plane size={26} />
+                    <strong className="stat-count">{stats?.disruptionDays ?? 0}</strong>
+                  </span>
+                  <span className="stat-label">Disruption</span>
+                </button>
+                <button className="stat" type="button" onClick={() => setView("history")}>
+                  <span className="stat-icon gold">
+                    <CalendarDays size={26} />
+                    <strong className="stat-count">{stats?.lengthDays ?? 0}</strong>
+                  </span>
+                  <span className="stat-label">Days in</span>
+                </button>
+                <button className="stat" type="button" onClick={() => setView("history")}>
+                  <span className="stat-icon token">
+                    <X size={26} />
+                    <strong className="stat-count">{stats?.missed ?? 0}</strong>
+                  </span>
+                  <span className="stat-label">Misses</span>
+                </button>
+              </section>
+
+              <section className="task-list glass-panel" aria-label="Daily floor">
+                {visibleItems.map((item) => (
+                  <div key={item.key} className="task-block">
+                    <button
+                      className={`task-row ${daily[item.key] ? "complete" : ""}`}
+                      type="button"
+                      onClick={() => toggleFloor(item.key)}
+                    >
+                      <span className="task-icon">{item.icon}</span>
+                      <span className="task-copy">
+                        <strong>{item.title}</strong>
+                        <span className="task-hint">{item.hint}</span>
+                      </span>
+                      <span className="check-indicator">
+                        {daily[item.key] ? <Check size={17} /> : null}
+                      </span>
+                    </button>
+                    {item.key === "leetcode" ? (
+                      <LeetcodeLogEditor
+                        value={daily.leetcodeLog}
+                        onSave={(log) => saveLeetcodeLog(log)}
+                        disabled={saving || busy}
+                      />
+                    ) : null}
+                  </div>
+                ))}
+              </section>
+
+              <p className="save-state">
+                {busy ? "Uploading..." : saving ? "Saving..." : "Saved privately"}
+              </p>
+              {authMessage ? <p className="save-state">{authMessage}</p> : null}
+            </section>
+          )
+        ) : null}
+
+        {view === "history" ? (
+          <HistoryView
+            epoch={viewedEpoch}
+            progress={progress}
+            today={currentDateKey}
+            stats={viewedStats}
+            leetcode={epochLeetcode}
+            reviews={viewedReviews}
+            isArchiveBrowse={isBrowsingArchive}
+            onBackToArchive={() => {
+              setBrowseEpochId(null);
+              setView("archive");
+            }}
+            onOpenDay={setExpandedDate}
+          />
+        ) : null}
+
+        {view === "archive" ? (
+          <section className="progress-view">
+            <div className="progress-heading">
+              <div>
+                <p>Archive</p>
+                <h1>Past streaks.</h1>
+              </div>
+            </div>
+            {archived.length === 0 ? (
+              <div className="empty-streak glass-panel">
+                <Archive size={28} />
+                <p className="muted">No archived streaks yet. Ended streaks land here.</p>
+              </div>
+            ) : (
+              <div className="archive-list">
+                {archived.map((epoch) => {
+                  const epochStat = epochStats(progress, epoch, currentDateKey);
+                  return (
+                    <button
+                      key={epoch.id}
+                      className="archive-row glass-panel"
+                      type="button"
+                      onClick={() => {
+                        setBrowseEpochId(epoch.id);
+                        setView("history");
+                        setExpandedDate(null);
+                      }}
+                    >
+                      <div className="archive-row-main">
+                        <strong>{epoch.label?.trim() || "Streak"}</strong>
+                        <span className="muted small">
+                          {formatRange(epoch.startDate, epoch.endDate ?? currentDateKey)}
+                        </span>
+                      </div>
+                      <div className="archive-row-meta">
+                        <span>{epochStat.lengthDays} days</span>
+                        <span className="muted small">{epochStat.completed} completed</span>
+                      </div>
+                      <ChevronRight size={18} />
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </section>
-        )}
+        ) : null}
+
+        {expanded ? (
+          <DayDetail
+            dateKey={expanded.dateKey}
+            day={expanded.day}
+            record={expanded.record}
+            editable={expanded.editable}
+            phase={phase}
+            busy={busy}
+            onClose={() => setExpandedDate(null)}
+            onToggle={(key) => toggleFloor(key, expanded.dateKey)}
+            onPhoto={() => choosePhotoForDate(expanded.dateKey)}
+            onSaveLeetcode={(log) => saveLeetcodeLog(log, expanded.dateKey)}
+          />
+        ) : null}
+
         <footer className="app-version">v{appVersion}</footer>
       </main>
     </Shell>
+  );
+}
+
+function LeetcodeLogEditor({
+  value,
+  onSave,
+  disabled,
+}: {
+  value?: LeetcodeLog;
+  onSave: (log: LeetcodeLog) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(value?.name ?? "");
+  const [pattern, setPattern] = useState(value?.pattern ?? "");
+  const [note, setNote] = useState(value?.note ?? "");
+
+  useEffect(() => {
+    setName(value?.name ?? "");
+    setPattern(value?.pattern ?? "");
+    setNote(value?.note ?? "");
+  }, [value]);
+
+  const hasLog = Boolean(value?.name || value?.pattern || value?.note);
+
+  return (
+    <div className="leetcode-log">
+      <button
+        type="button"
+        className="leetcode-log-toggle"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Code size={14} />
+        {hasLog ? (
+          <span className="leetcode-log-summary">
+            {value?.name || "Logged"}
+            {value?.pattern ? ` · ${value.pattern}` : ""}
+          </span>
+        ) : (
+          <span>Log the problem (optional)</span>
+        )}
+        <ChevronRight size={15} className={open ? "rotated" : ""} />
+      </button>
+      {open ? (
+        <div className="leetcode-log-fields">
+          <input
+            type="text"
+            placeholder="Problem name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <select value={pattern} onChange={(event) => setPattern(event.target.value)}>
+            <option value="">Pattern…</option>
+            {leetcodePatterns.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            placeholder="One-line note"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+          />
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={disabled}
+            onClick={() => {
+              onSave({ name, pattern, note });
+              setOpen(false);
+            }}
+          >
+            <Save size={15} /> Save log
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function HistoryView({
+  epoch,
+  progress,
+  today,
+  stats,
+  leetcode,
+  reviews,
+  isArchiveBrowse,
+  onBackToArchive,
+  onOpenDay,
+}: {
+  epoch: Epoch | null;
+  progress: Record<string, DailyRecord>;
+  today: string;
+  stats: ReturnType<typeof epochStats> | null;
+  leetcode: ReturnType<typeof leetcodeEntries>;
+  reviews: { weekStart: string; note: string }[];
+  isArchiveBrowse: boolean;
+  onBackToArchive: () => void;
+  onOpenDay: (dateKey: string) => void;
+}) {
+  if (!epoch) {
+    return (
+      <section className="progress-view">
+        <div className="empty-streak glass-panel">
+          <CalendarDays size={28} />
+          <p className="muted">No active streak to show. Start one from the Today tab.</p>
+        </div>
+      </section>
+    );
+  }
+
+  const end = epochRangeEnd(epoch, today);
+  const days = enumerateDateKeys(epoch.startDate, end).reverse();
+
+  return (
+    <section className="progress-view">
+      {isArchiveBrowse ? (
+        <button className="text-button back-button" type="button" onClick={onBackToArchive}>
+          ← Archive
+        </button>
+      ) : null}
+      <div className="progress-heading">
+        <div>
+          <p>History</p>
+          <h1>{isArchiveBrowse ? epoch.label?.trim() || "Streak" : "Current streak"}</h1>
+          <span className="heading-sub muted small">{formatRange(epoch.startDate, end)}</span>
+        </div>
+      </div>
+
+      {stats ? (
+        <div className="history-stats glass-panel">
+          <div>
+            <strong>{stats.completed}</strong>
+            <span>Completed</span>
+          </div>
+          <div>
+            <strong>{stats.disruptionDays}</strong>
+            <span>Disruption</span>
+          </div>
+          <div>
+            <strong>{stats.missed}</strong>
+            <span>Misses</span>
+          </div>
+          <div>
+            <strong>{stats.photos}</strong>
+            <span>Photos</span>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="legend">
+        <span>
+          <i className="dot complete" /> Complete
+        </span>
+        <span>
+          <i className="dot disruption" /> Disruption
+        </span>
+        <span>
+          <i className="dot miss" /> Miss
+        </span>
+      </div>
+
+      <div className="day-grid">
+        {days.map((dateKey) => {
+          const record = progress[dateKey];
+          const state = dayState(record, dateKey, today);
+          const day = dayNumberInEpoch(epoch.startDate, dateKey);
+          const hasPhoto = Boolean(record?.progressPhotoUrl);
+          return (
+            <button
+              key={dateKey}
+              className={`day-cell ${state} ${hasPhoto ? "has-photo" : ""}`}
+              type="button"
+              onClick={() => onOpenDay(dateKey)}
+              aria-label={`Day ${day}`}
+            >
+              {hasPhoto ? (
+                <Image
+                  src={record!.progressPhotoUrl}
+                  alt={`Day ${day}`}
+                  fill
+                  sizes="(max-width: 760px) 25vw, 120px"
+                  style={{ objectFit: "cover" }}
+                />
+              ) : null}
+              <span className="day-cell-scrim" />
+              <span className="day-cell-num">{day}</span>
+              {state === "disruption" ? (
+                <span className="day-cell-badge">
+                  <Plane size={11} />
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      {reviews.length > 0 ? (
+        <div className="leetcode-history glass-panel">
+          <div className="settings-section-title">
+            <Sparkles size={15} /> Weekly recaps
+          </div>
+          <ul className="review-list">
+            {reviews.map((review) => (
+              <li key={review.weekStart}>
+                <span className="review-week">
+                  Week of {formatRange(review.weekStart, addDays(review.weekStart, 6))}
+                </span>
+                <p>{review.note}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {leetcode.length > 0 ? (
+        <div className="leetcode-history glass-panel">
+          <div className="settings-section-title">
+            <Code size={15} /> LeetCode log
+          </div>
+          <ul className="leetcode-entries">
+            {leetcode.map((entry) => (
+              <li key={entry.dateKey}>
+                <span className="leetcode-entry-date">{entry.dateKey.slice(5)}</span>
+                <span className="leetcode-entry-name">{entry.name || "Problem"}</span>
+                {entry.pattern ? (
+                  <span className="leetcode-entry-pattern">{entry.pattern}</span>
+                ) : null}
+                {entry.note ? <span className="leetcode-entry-note">{entry.note}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DayDetail({
+  dateKey,
+  day,
+  record,
+  editable,
+  phase,
+  busy,
+  onClose,
+  onToggle,
+  onPhoto,
+  onSaveLeetcode,
+}: {
+  dateKey: string;
+  day: number;
+  record: DailyRecord;
+  editable: boolean;
+  phase: Phase;
+  busy: boolean;
+  onClose: () => void;
+  onToggle: (key: FloorKey) => void;
+  onPhoto: () => void;
+  onSaveLeetcode: (log: LeetcodeLog) => void;
+}) {
+  const hasPhoto = Boolean(record.progressPhotoUrl);
+  const items = floorItems(phase);
+  // Show the floor that applied to that day (stripped on disruption days).
+  const keys = record.disruption ? requiredFloorKeys({ disruption: true }) : floorKeys;
+  const shown = items.filter((item) => keys.includes(item.key as never));
+  const complete = isDayComplete(record);
+
+  return (
+    <div className="settings-scrim" role="presentation" onClick={onClose}>
+      <section
+        className="day-detail glass-panel"
+        role="dialog"
+        aria-modal="true"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="expanded-heading">
+          <button className="text-button back-button" type="button" onClick={onClose}>
+            ← Close
+          </button>
+          <span className={`status-pill ${complete ? (record.disruption ? "disruption" : "complete") : "miss"}`}>
+            {record.disruption ? <Plane size={13} /> : <Check size={13} />}
+            {complete ? (record.disruption ? "Disruption day" : "Complete") : "Incomplete"}
+          </span>
+        </div>
+
+        <div className={`expanded-photo-view ${complete ? "complete" : "miss"}`}>
+          {hasPhoto ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={record.progressPhotoUrl} alt={`Day ${day}`} loading="eager" decoding="async" />
+          ) : (
+            <div className="expanded-photo-empty">
+              <ImageIcon size={30} />
+              <span>No progress photo</span>
+            </div>
+          )}
+          <span className="expanded-photo-meta">
+            <span>Day {day}</span>
+            <span className="muted small">{dateKey}</span>
+          </span>
+        </div>
+
+        <div className="day-checklist glass-panel">
+          {shown.map((item) =>
+            editable ? (
+              <button
+                key={item.key}
+                className={`checklist-row interactive ${record[item.key] ? "done" : ""}`}
+                type="button"
+                onClick={() => onToggle(item.key)}
+              >
+                <span className="checklist-icon">{item.icon}</span>
+                <span className="checklist-title">{item.title}</span>
+                <span className="checklist-mark">
+                  {record[item.key] ? <Check size={15} /> : <X size={14} />}
+                </span>
+              </button>
+            ) : (
+              <div className={`checklist-row ${record[item.key] ? "done" : ""}`} key={item.key}>
+                <span className="checklist-icon">{item.icon}</span>
+                <span className="checklist-title">{item.title}</span>
+                <span className="checklist-mark">
+                  {record[item.key] ? <Check size={15} /> : <X size={14} />}
+                </span>
+              </div>
+            ),
+          )}
+        </div>
+
+        {record.leetcodeLog && (record.leetcodeLog.name || record.leetcodeLog.note) ? (
+          <div className="day-leetcode glass-panel">
+            <Code size={15} />
+            <div>
+              <strong>{record.leetcodeLog.name || "LeetCode"}</strong>
+              {record.leetcodeLog.pattern ? <span> · {record.leetcodeLog.pattern}</span> : null}
+              {record.leetcodeLog.note ? (
+                <p className="muted small">{record.leetcodeLog.note}</p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {editable ? (
+          <>
+            <LeetcodeLogEditor
+              value={record.leetcodeLog}
+              onSave={onSaveLeetcode}
+              disabled={busy}
+            />
+            <button
+              className="secondary-button expanded-upload-button"
+              type="button"
+              onClick={onPhoto}
+              disabled={busy}
+            >
+              <Camera size={18} />
+              {busy ? "Uploading..." : hasPhoto ? "Replace photo" : "Add photo"}
+            </button>
+          </>
+        ) : null}
+      </section>
+    </div>
   );
 }
 
@@ -1396,7 +2241,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
       <div className="liquid-sheet" />
-      {children}
+      <div className="shell-scroll">{children}</div>
     </div>
   );
 }

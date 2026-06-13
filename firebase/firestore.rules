@@ -16,6 +16,14 @@ service cloud.firestore {
       match /daily/{date} {
         allow read, create, update, delete: if owns(uid);
       }
+
+      match /epochs/{epochId} {
+        allow read, create, update, delete: if owns(uid);
+      }
+
+      match /reviews/{weekId} {
+        allow read, create, update, delete: if owns(uid);
+      }
     }
   }
 }

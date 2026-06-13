@@ -1,6 +1,41 @@
-# 75 hard
+# streak
 
-A private 75 Hard tracker built with Next.js, Firebase Auth, Firestore, Firebase Storage, and Vercel.
+A private, sustainable training &amp; interview-prep streak tracker built with
+Next.js, Firebase Auth, Firestore, Firebase Storage, and Vercel. It grew out of
+a classic 75 Hard tracker and keeps the part that worked — a short binary daily
+checklist that produces a clean "done for the day" state — while rebuilding the
+rules to bend under disruption instead of resetting to zero.
+
+## What it tracks
+
+- **Daily floor** (binary toggles, each completable on a bad day): Movement
+  (with an outdoor element), one LeetCode problem, read 10 pages, hit the
+  current nutrition phase target, hydration, and "hold the lines." Check them
+  all and the day is complete.
+- **Optional progress photo** per day. Encouraged, never required to complete a
+  day. Stored in Firebase Storage and attached to the day.
+- **Disruption mode** for travel/chaos: swaps the full floor for a stripped one
+  (movement, LeetCode, 10 pages, hold the lines). A completed disruption day is
+  a fully valid day and advances the streak.
+- **Streaks as epochs**: a streak has a start, an end (null while active), and an
+  optional label. Only you end one ("End current streak" archives it; "Start new
+  streak" begins the next). A missed day is recorded but never resets the streak.
+- **Phase-aware nutrition**: configure your current phase (e.g. lean bulk,
+  mini-cut) with protein and calorie targets; the nutrition toggle is about
+  hitting that target.
+- **History & archive**: a per-streak calendar distinguishing complete,
+  disruption, and missed days, a LeetCode log, and an optional weekly review.
+  Past streaks live in the Archive and stay out of the main view.
+- **Hard-block mode** (optional, off by default): a time-boxed intensification
+  that forces the full floor for N days.
+
+### Migrating existing data
+
+Existing daily records from the original 75 Hard run are never deleted or
+rewritten. On first load after upgrading, the app detects your history and walks
+you through archiving it as your first streak (you set/confirm its end date),
+then starts a fresh streak. Epoch membership is derived from date ranges, so the
+migration adds new `epochs` documents without touching any existing `daily` doc.
 
 ## Local Setup
 
@@ -24,7 +59,9 @@ Deploy the included rules after choosing your Firebase project:
 firebase deploy --only firestore:rules,storage
 ```
 
-The rules scope profile documents, daily records, and progress photos to the authenticated user id.
+The rules scope profile documents, daily records, streak epochs, weekly reviews,
+and progress photos to the authenticated user id. Redeploy `firestore:rules`
+after upgrading so the new `epochs` and `reviews` subcollections are covered.
 
 ## Vercel
 
